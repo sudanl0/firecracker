@@ -78,7 +78,7 @@ impl IoUringError {
 
 /// Main object representing an io_uring instance.
 #[derive(Debug)]
-pub struct IoUring {
+pub struct IoUring<T> {
     registered_fds_count: u32,
     squeue: SubmissionQueue,
     cqueue: CompletionQueue,
@@ -91,9 +91,10 @@ pub struct IoUring {
     // The total number of ops. These includes the ops on the submission queue, the in-flight ops
     // and the ops that are in the CQ, but haven't been popped yet.
     num_ops: u32,
+    slab: slab::Slab<T>,
 }
 
-impl IoUring {
+impl<T: Debug> IoUring<T> {
     /// Create a new instance.
     ///
     /// # Arguments
@@ -136,6 +137,9 @@ impl IoUring {
 
         let squeue = SubmissionQueue::new(fd, &params).map_err(IoUringError::SQueue)?;
         let cqueue = CompletionQueue::new(fd, &params).map_err(IoUringError::CQueue)?;
+        // There is no need for checking overflow since syscall with
+        // sq_entries+cq_entries > usize::MAX must have failed with ENOMEM.
+        let slab = slab::Slab::with_capacity((params.sq_entries + params.cq_entries) as usize);
 
         let mut instance = Self {
             squeue,
@@ -143,6 +147,7 @@ impl IoUring {
             fd: file,
             registered_fds_count: 0,
             num_ops: 0,
+            slab,
         };
 
         instance.check_operations()?;
@@ -161,11 +166,7 @@ impl IoUring {
     }
 
     /// Push an [`Operation`](operation/struct.Operation.html) onto the submission queue.
-    ///
-    /// # Safety
-    /// Unsafe because we pass a raw user_data pointer to the kernel.
-    /// It's up to the caller to make sure that this value is ever freed (not leaked).
-    pub unsafe fn push<T: Debug>(&mut self, op: Operation<T>) -> Result<(), (IoUringError, T)> {
+    pub fn push(&mut self, op: Operation<T>) -> Result<(), (IoUringError, T)> {
         // validate that we actually did register fds
         let fd = op.fd();
         match self.registered_fds_count {
@@ -176,14 +177,17 @@ impl IoUring {
                     return Err((IoUringError::FullCQueue, op.user_data()));
                 }
                 self.squeue
-                    .push(op.into_sqe())
+                    .push(op.into_sqe(&mut self.slab))
                     .map(|res| {
                         // This is safe since self.num_ops < IORING_MAX_CQ_ENTRIES (65536)
                         self.num_ops += 1;
                         res
                     })
-                    .map_err(|err_tuple: (SQueueError, T)| -> (IoUringError, T) {
-                        (IoUringError::SQueue(err_tuple.0), err_tuple.1)
+                    .map_err(|err_tuple: (SQueueError, u64)| -> (IoUringError, T) {
+                        (
+                            IoUringError::SQueue(err_tuple.0),
+                            self.slab.remove(err_tuple.1 as usize),
+                        )
                     })
             }
         }
@@ -191,14 +195,9 @@ impl IoUring {
 
     /// Pop a completed entry off the completion queue. Returns `Ok(None)` if there are no entries.
     /// The type `T` must be the same as the `user_data` type used for `push`-ing the operation.
-    ///
-    /// # Safety
-    /// Unsafe because we reconstruct the `user_data` from a raw pointer passed by the kernel.
-    /// It's up to the caller to make sure that `T` is the correct type of the `user_data`, that
-    /// the raw pointer is valid and that we have full ownership of that address.
-    pub unsafe fn pop<T: Debug>(&mut self) -> Result<Option<Cqe<T>>, IoUringError> {
+    pub fn pop(&mut self) -> Result<Option<Cqe<T>>, IoUringError> {
         self.cqueue
-            .pop()
+            .pop(&mut self.slab)
             .map(|maybe_cqe| {
                 maybe_cqe.map(|cqe| {
                     // This is safe since the pop-ed CQEs have been previously pushed. However
@@ -391,8 +390,8 @@ mod tests {
     use super::*;
     use crate::vstate::memory::{Bytes, MmapRegion};
 
-    fn drain_cqueue(ring: &mut IoUring) {
-        while let Some(entry) = unsafe { ring.pop::<u32>().unwrap() } {
+    fn drain_cqueue(ring: &mut IoUring<u32>) {
+        while let Some(entry) = ring.pop().unwrap() {
             entry.result().unwrap();
 
             // Assert that there were no partial writes.
@@ -581,9 +580,7 @@ mod tests {
                             ring.submit_and_wait_all().unwrap();
                             drain_cqueue(&mut ring);
                         }
-                        unsafe {
-                            ring.push(operation).unwrap();
-                        }
+                        ring.push(operation).unwrap();
                     }
 
                     // Submit any left async ops and wait.
