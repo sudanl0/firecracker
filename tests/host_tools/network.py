@@ -42,8 +42,13 @@ class SSHConnection:
         exit_code, stdout, stderr = self._exec(cmd_string)
         return exit_code, StringIO(stdout), StringIO(stderr)
 
+    def execute_command_bg(self, cmd_string):
+        """Execute the command in background in the ssh context."""
+        return self._exec_bg(cmd_string)
+
     def scp_file(self, local_path, remote_path):
         """Copy a files to the VM using scp."""
+        #print('scp {} to {}'.format(local_path, remote_path))
         cmd = (
             "scp -o StrictHostKeyChecking=no"
             " -o UserKnownHostsFile=/dev/null"
@@ -93,33 +98,32 @@ class SSHConnection:
         if ecode != 0:
             raise ConnectionError
 
+    def _ssh_cmd(self, cmd):
+        """Private function that composes the full ssh command."""
+        return [
+            "ssh",
+            "-q",
+            "-o",
+            "ConnectTimeout=1",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-i",
+            self.ssh_config["ssh_key_path"],
+            "{}@{}".format(
+                self.ssh_config["username"], self.ssh_config["hostname"]
+            ),
+            cmd,
+        ]
+
     def _exec(self, cmd):
         """Private function that handles the ssh client invocation."""
 
         def _exec_raw(_cmd):
             # pylint: disable=subprocess-run-check
-            cp = utils.run_cmd(
-                [
-                    "ssh",
-                    "-q",
-                    "-o",
-                    "ConnectTimeout=1",
-                    "-o",
-                    "StrictHostKeyChecking=no",
-                    "-o",
-                    "UserKnownHostsFile=/dev/null",
-                    "-i",
-                    self.ssh_config["ssh_key_path"],
-                    "{}@{}".format(
-                        self.ssh_config["username"], self.ssh_config["hostname"]
-                    ),
-                    _cmd,
-                ],
-                ignore_return_code=True,
-            )
-
-            _res = (cp.returncode, cp.stdout, cp.stderr)
-            return _res
+            cp = utils.run_cmd(self._ssh_cmd(cmd), ignore_return_code=True)
+            return (cp.returncode, cp.stdout, cp.stderr)
 
         # TODO: If a microvm runs in a particular network namespace, we have to
         # temporarily switch to that namespace when doing something that routes
@@ -127,10 +131,26 @@ class SSHConnection:
         # reachable. Use a better setup/solution at some point!
         if self.netns_file_path:
             with Namespace(self.netns_file_path, "net"):
-                res = _exec_raw(cmd)
+                return _exec_raw(cmd)
         else:
-            res = _exec_raw(cmd)
-        return res
+            return _exec_raw(cmd)
+
+    def _exec_bg(self, cmd):
+        """Private function that handles the ssh client invocation."""
+
+        def _exec_raw(_cmd):
+            # pylint: disable=subprocess-run-check
+            return utils.run_cmd_bg(self._ssh_cmd(cmd))
+
+        # TODO: If a microvm runs in a particular network namespace, we have to
+        # temporarily switch to that namespace when doing something that routes
+        # packets over the network, otherwise the destination will not be
+        # reachable. Use a better setup/solution at some point!
+        if self.netns_file_path:
+            with Namespace(self.netns_file_path, "net"):
+                return _exec_raw(cmd)
+        else:
+            return _exec_raw(cmd)
 
 
 class NoMoreIPsError(Exception):

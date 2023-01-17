@@ -402,15 +402,7 @@ def run_cmd_sync(cmd, ignore_return_code=False, no_shell=False, cwd=None):
     :param cwd: sets the current directory before the child is executed
     :return: return code, stdout, stderr
     """
-    if isinstance(cmd, list) or no_shell:
-        # Create the async process
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
-        )
-    else:
-        proc = subprocess.Popen(
-            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
-        )
+    proc = run_cmd_bg(cmd, no_shell, cwd)
 
     # Capture stdout/stderr
     stdout, stderr = proc.communicate()
@@ -516,6 +508,27 @@ def run_cmd(cmd, ignore_return_code=False, no_shell=False, cwd=None):
     return run_cmd_sync(
         cmd=cmd, ignore_return_code=ignore_return_code, no_shell=no_shell, cwd=cwd
     )
+
+
+def run_cmd_bg(cmd, no_shell=False, cwd=None):
+    """
+    Run a command in background.
+
+    :param cmd: command to run
+    :param noshell: don't run the command in a sub-shell
+    :returns: tuple of (return code, stdout, stderr)
+    """
+    if isinstance(cmd, list) or no_shell:
+        # Create the async process
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
+        )
+    else:
+        proc = subprocess.Popen(
+            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
+        )
+
+    return proc
 
 
 def eager_map(func, iterable):
@@ -720,6 +733,7 @@ def configure_mmds(
 
     if ipv4_address:
         mmds_config["ipv4_address"] = ipv4_address
+
 
     response = test_microvm.mmds.put_config(json=mmds_config)
     assert test_microvm.api_session.is_status_no_content(response.status_code)

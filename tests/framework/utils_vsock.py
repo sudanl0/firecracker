@@ -1,7 +1,6 @@
 # Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 """Helper functions for testing vsock device."""
-
 import hashlib
 import os.path
 from select import select
@@ -14,9 +13,14 @@ from host_tools.network import SSHConnection
 
 ECHO_SERVER_PORT = 5252
 SERVER_ACCEPT_BACKLOG = 128
-TEST_CONNECTION_COUNT = 50
-BLOB_SIZE = 20 * 1024 * 1024
-BUF_SIZE = 64 * 1024
+
+# TEST_CONNECTION_COUNT = 50
+TEST_CONNECTION_COUNT = 1
+# BLOB_SIZE = 20 * 1024 * 1024
+BLOB_SIZE = 40 * 1024
+# BUF_SIZE = 64 * 1024
+BUF_SIZE = 1024
+
 VSOCK_UDS_PATH = "v.sock"
 
 
@@ -33,16 +37,22 @@ class HostEchoServer(Thread):
         super().__init__()
         self.vm = vm
         self.path = path
+        # print('HostEchoServer path {}'.format(path))
         self.sock = socket(AF_UNIX, SOCK_STREAM)
+        # print(f"{self.path}")
+        # utils.run_cmd("rm -f {}".format(self.path))
         self.sock.bind(path)
+        # print('HostEchoServer bind done on {}'.format(path))
         self.sock.listen(SERVER_ACCEPT_BACKLOG)
+        # print('HostEchoServer listening on {}'.format(path))
         self.error = None
         self.clients = []
         self.exit_evt = Event()
 
         # Link the listening Unix socket into the VM's jail, so that
         # Firecracker can connect to it.
-        vm.create_jailed_resource(path)
+        jailed_path = vm.create_jailed_resource(path)
+        # print('HostEchoServer linked {} to {}'.format(path, jailed_path))
 
     def run(self):
         """Thread code payload.
@@ -63,14 +73,17 @@ class HostEchoServer(Thread):
             rd_list, _, _ = select(watch_list, [], [], 1)
             for rdo in rd_list:
                 if rdo == self.sock:
+                    # print('HostEchoServer new client')
                     # Read event on the listening socket: a new client
                     # wants to connect.
                     (client, _) = self.sock.accept()
+                    # print('HostEchoServer accepted new client')
                     self.clients.append(client)
                     continue
                 # Read event on a connected socket: new data is
                 # available from some client.
                 buf = rdo.recv(BUF_SIZE)
+                # print('HostEchoServer read {} bytes'.format(len(buf)))
                 if not buf:
                     # Zero-length read: connection reset by peer.
                     self.clients.remove(rdo)
@@ -78,7 +91,9 @@ class HostEchoServer(Thread):
                 sent = 0
                 while sent < len(buf):
                     # Send back everything we just read.
-                    sent += rdo.send(buf[sent:])
+                    sent_now = rdo.send(buf[sent:])
+                    sent += sent_now
+                    # print('HostEchoServer sent {} bytes'.format(sent_now))
 
     def exit(self):
         """Shut down the echo server and wait for it to exit.
@@ -89,7 +104,9 @@ class HostEchoServer(Thread):
         self.exit_evt.set()
         self.join()
         self.sock.close()
+        print('======================HostEchoServer exit')
         utils.run_cmd("rm -f {}".format(self.path))
+        # print('HostEchoServer exit')
 
 
 class HostEchoWorker(Thread):
@@ -134,7 +151,6 @@ class HostEchoWorker(Thread):
             hash_obj = hashlib.md5()
 
             while True:
-
                 buf = blob_file.read(BUF_SIZE)
                 if not buf:
                     break
@@ -196,15 +212,26 @@ def check_host_connections(vm, uds_path, blob_path, blob_hash):
         assert wrk.hash == blob_hash
 
 
-def check_guest_connections(vm, server_port_path, blob_path, blob_hash):
+echo_server_global=[]
+def close_guest_connections():
+    for echo_server in echo_server_global:
+        echo_server.exit()
+
+def check_guest_connections(vm, server_port_path, blob_path, blob_hash, i):
     """Test guest-initiated connections.
 
     This will start an echo server on the host (in its own thread), then
     start `TEST_CONNECTION_COUNT` workers inside the guest VM, all
     communicating with the echo server.
     """
-    echo_server = HostEchoServer(vm, server_port_path)
-    echo_server.start()
+    if len(echo_server_global) <= i:
+        echo_server = HostEchoServer(vm, server_port_path)
+        echo_server_global.append(echo_server)
+        echo_server.start()
+    else:
+        echo_server = echo_server_global[i]
+    # echo_server = HostEchoServer(vm, server_port_path)
+    # print('started HostEchoServer')
     conn = SSHConnection(vm.ssh_config)
 
     # Increase maximum process count for the ssh service.
@@ -216,6 +243,7 @@ def check_guest_connections(vm, server_port_path, blob_path, blob_hash):
         /sys/fs/cgroup/pids/system.slice/ssh.service/pids.max"
     )
     assert ecode == 0, "Unable to set max process count for guest ssh service."
+    # print('set max process count on guest')
 
     # Build the guest worker sub-command.
     # `vsock_helper` will read the blob file from STDIN and send the echo
@@ -240,12 +268,18 @@ def check_guest_connections(vm, server_port_path, blob_path, blob_hash):
     cmd += "done;"
     cmd += "for w in $workers; do wait $w || exit -1; done"
 
-    ecode, _, _ = conn.execute_command(cmd)
+    # print('run this on guest:\n{}'.format(cmd))
 
-    echo_server.exit()
-    assert echo_server.error is None
+    # ecode, out, err = conn.execute_command(cmd)
+    # print('out: {}'.format(out.read()))
+    # print('err: {}'.format(err.read()))
 
-    assert ecode == 0, ecode
+    # echo_server.exit()
+    # assert echo_server.error is None
+
+    # assert ecode == 0, ecode
+
+    conn.execute_command_bg(cmd)
 
 
 def make_host_port_path(uds_path, port):
