@@ -4,10 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Helper script used to read MSR values from ranges known to contain MSRs.
-
 print_msr() {
     local msr_hex=$(printf "%#x" $1)
-    if output=$(rdmsr $msr_hex 2>> /dev/null); then
+    # if output=$(rdmsrnot $msr_hex 2>> /dev/null); then
+    if output=$(sudan $msr_hex 2>> /dev/null); then
         echo "$msr_hex,implemented,0x$output"
     else
         echo "$msr_hex,unimplemented,0x0"

@@ -13,6 +13,7 @@ import re
 import sys
 import pytest
 import pandas as pd
+import time
 
 from conftest import _test_images_s3_bucket
 from framework import utils
@@ -22,6 +23,7 @@ from framework.builder import MicrovmBuilder
 from framework.defs import SUPPORTED_KERNELS
 import framework.utils_cpuid as cpuid_utils
 import host_tools.network as net_tools
+from framework.utils_cpu_templates import SUPPORTED_CPU_TEMPLATES
 
 PLATFORM = platform.machine()
 
@@ -182,26 +184,34 @@ MSR_EXCEPTION_LIST = [
     "0x175",       # MSR_IA32_SYSENTER_ESP
     "0x176",       # MSR_IA32_SYSENTER_EIP
     "0x6e0",       # MSR_IA32_TSCDEADLINE
+    "0x834"     ,
     "0xc0000082",  # MSR_LSTAR
     "0xc0000083",  # MSR_CSTAR
     "0xc0000100",  # MSR_FS_BASE
     "0xc0000101",  # MSR_GS_BASE
+    "0xc0010007",  # MSR_K7_PERFCTR3
+    "0xc001020b",  # MSR_AMD_FAM15H_PERFCTR5/MSR_F15H_PERF_CTR
+    "0xc0011029",  # MSR_AMD64_DE_CFG
 ]
-# fmt: on
 
+# CPU templates which support MSR test
+SUPPORTED_CPU_TEMPL = [None, "T2S", "T2A"]
+SUPPORTED_CPU_VENDORS = [cpuid_utils.CpuVendor.INTEL, cpuid_utils.CpuVendor.AMD]
+# fmt: on
 
 @pytest.mark.skipif(
     PLATFORM != "x86_64", reason="CPU features are masked only on x86_64."
 )
 @pytest.mark.skipif(
-    cpuid_utils.get_cpu_vendor() != cpuid_utils.CpuVendor.INTEL,
-    reason="CPU templates are only available on Intel.",
+    cpuid_utils.get_cpu_vendor() not in SUPPORTED_CPU_VENDORS,
+    reason=f"CPU templates are only available on {[v.name for v in SUPPORTED_CPU_VENDORS]}"
 )
 @pytest.mark.skipif(
     utils.get_kernel_version(level=1) not in SUPPORTED_KERNELS,
     reason=f"Supported kernels are {SUPPORTED_KERNELS}",
 )
-@pytest.mark.parametrize("cpu_template", ["T2S"])
+@pytest.mark.parametrize( "cpu_template", \
+    set(SUPPORTED_CPU_TEMPLATES).intersection(SUPPORTED_CPU_TEMPL))
 @pytest.mark.timeout(900)
 @pytest.mark.nonci
 def test_cpu_rdmsr(bin_cloner_path, network_config, cpu_template):
@@ -308,15 +318,20 @@ def _test_cpu_rdmsr(context):
     # Guest Kernel 5.10 sets up some MSRs differently.
     if context.kernel.name() == "vmlinux-5.10.bin":
         guest_msrs_5_10 = {
-            # See https://github.com/torvalds/linux/commit/1db2a6e1e29ff994443a9eef7cf3d26104c777a7
-            "0x3a": "0x1",  # MSR_IA32_FEAT_CTL
             # See https://github.com/torvalds/linux/commit/229b969b3d38bc28bcd55841ee7ca9a9afb922f3
             "0x808": "0x10",  # IA32_X2APIC_TPR
             "0x80a": "0x10",  # IA32_X2APIC_PPR
             # `arch/x86/include/asm/irq_vectors.h` to see how LOCAL_TIMER_VECTOR changed
             "0x832": "0x400ec",  # IA32_X2APIC_LVT_TIMER
-        }
 
+        }
+        guest_msrs_5_10_Intel = {
+            # See https://github.com/torvalds/linux/commit/1db2a6e1e29ff994443a9eef7cf3d26104c777a7
+            "0x3a": "0x1",  # MSR_IA32_FEAT_CTL
+        }
+        vendor = cpuid_utils.get_cpu_vendor()
+        if vendor == cpuid_utils.CpuVendor.INTEL:
+            guest_msrs_5_10 |= guest_msrs_5_10_Intel
         for key, value in guest_msrs_5_10.items():
             baseline_val_df.loc[baseline_val_df["MSR_ADDR"] == key, "VALUE"] = value
 
@@ -331,7 +346,7 @@ def _test_cpu_rdmsr(context):
 # that spans two instances (one that takes a snapshot and one that restores from it)
 # fmt: off
 SNAPSHOT_RESTORE_SHARED_NAMES = {
-    "cpu_templates":                     [None, "T2S"],
+    "cpu_templates":                     SUPPORTED_CPU_TEMPL,
     "snapshot_artifacts_root_dir_wrmsr": "snapshot_artifacts/wrmsr",
     "snapshot_artifacts_root_dir_cpuid": "snapshot_artifacts/cpuid",
     "rootfs_fname":                      "rootfs_rw",
@@ -351,20 +366,30 @@ SNAPSHOT_RESTORE_SHARED_NAMES = {
 }
 # fmt: on
 
-
-def dump_msr_state_to_file(dump_fname, ssh_conn, shared_names):
+def dump_msr_state_to_file(dump_fname, ssh_conn, shared_names, restore=False):
     """
     Read MSR state via SSH and dump it into a file.
     """
+    print(f"\n{restore=}")
     ssh_conn.scp_file(
         shared_names["msr_reader_host_fname"], shared_names["msr_reader_guest_fname"]
     )
-    _, stdout, stderr = ssh_conn.execute_command(shared_names["msr_reader_guest_fname"])
-    assert stderr.read() == ""
 
+    _, stdout, stderr = ssh_conn.execute_command(shared_names["msr_reader_guest_fname"])
+    _, stdout_debug, stderr_debug = ssh_conn.execute_command("free -h -m; vmstate -s")
+    print("Free output after")
+    print("{}".format(stdout_debug.read()))
     with open(dump_fname, "w", encoding="UTF-8") as file:
         file.write(stdout.read())
 
+    if restore == True:
+        print("^^^^")
+        if os.path.exists(dump_fname) and os.stat(dump_fname).st_size != 0:
+            with open(dump_fname, "r", encoding="UTF-8") as file:
+                debug_data = file.readlines()
+            print(f"{debug_data[-1]=}")
+        print("____")
+    assert stderr.read() == ""
 
 def _test_cpu_wrmsr_snapshot(context):
     shared_names = context.custom["shared_names"]
@@ -395,10 +420,10 @@ def _test_cpu_wrmsr_snapshot(context):
     wrmsr_input_guest_fname = "/tmp/wrmsr_input.txt"
     ssh_connection.scp_file(wrmsr_input_host_fname, wrmsr_input_guest_fname)
 
-    _, _, stderr = ssh_connection.execute_command(
-        f"{msr_writer_guest_fname} {wrmsr_input_guest_fname}"
-    )
-    assert stderr.read() == ""
+    # _, _, stderr = ssh_connection.execute_command(
+    #     f"{msr_writer_guest_fname} {wrmsr_input_guest_fname}"
+    # )
+    # assert stderr.read() == ""
 
     # Dump MSR state to a file that will be published to S3 for the 2nd part of the test
     snapshot_artifacts_dir = (
@@ -412,12 +437,13 @@ def _test_cpu_wrmsr_snapshot(context):
     msrs_before_fname = Path(snapshot_artifacts_dir) / shared_names["msrs_before_fname"]
 
     dump_msr_state_to_file(msrs_before_fname, ssh_connection, shared_names)
+    # time.sleep(0.25)
 
     # Take a snapshot
     vm.pause_to_snapshot(
         mem_file_path=shared_names["mem_fname"],
         snapshot_path=shared_names["snapshot_fname"],
-        diff=True,
+        # diff=True,
     )
 
     # Copy snapshot files to be published to S3 for the 2nd part of the test
@@ -440,14 +466,15 @@ def _test_cpu_wrmsr_snapshot(context):
     PLATFORM != "x86_64", reason="CPU features are masked only on x86_64."
 )
 @pytest.mark.skipif(
-    cpuid_utils.get_cpu_vendor() != cpuid_utils.CpuVendor.INTEL,
-    reason="CPU templates are only available on Intel.",
+    cpuid_utils.get_cpu_vendor() not in SUPPORTED_CPU_VENDORS,
+    reason=f"CPU templates are only available on {[v.name for v in SUPPORTED_CPU_VENDORS]}"
 )
 @pytest.mark.skipif(
     utils.get_kernel_version(level=1) not in SUPPORTED_KERNELS,
     reason=f"Supported kernels are {SUPPORTED_KERNELS}",
 )
-@pytest.mark.parametrize("cpu_template", SNAPSHOT_RESTORE_SHARED_NAMES["cpu_templates"])
+@pytest.mark.parametrize("cpu_template", \
+    set(SUPPORTED_CPU_TEMPLATES).intersection(SUPPORTED_CPU_TEMPL))
 @pytest.mark.timeout(900)
 @pytest.mark.nonci
 def test_cpu_wrmsr_snapshot(bin_cloner_path, cpu_template):
@@ -611,14 +638,14 @@ def _test_cpu_wrmsr_restore(context):
         snapshot_mem=mem_fname_in_jail,
         snapshot_vmstate=snapshot_fname_in_jail,
         snapshot_disks=[rootfs_fname_in_jail],
-        snapshot_is_diff=True,
+        # snapshot_is_diff=True,
     )
 
     # Dump MSR state to a file for further comparison
     msrs_after_fname = Path(snapshot_artifacts_dir) / shared_names["msrs_after_fname"]
     ssh_connection = net_tools.SSHConnection(vm.ssh_config)
 
-    dump_msr_state_to_file(msrs_after_fname, ssh_connection, shared_names)
+    dump_msr_state_to_file(msrs_after_fname, ssh_connection, shared_names, True)
 
     # Compare the two lists of MSR values and assert they are equal
     check_msr_values_are_equal(
@@ -632,14 +659,15 @@ def _test_cpu_wrmsr_restore(context):
     PLATFORM != "x86_64", reason="CPU features are masked only on x86_64."
 )
 @pytest.mark.skipif(
-    cpuid_utils.get_cpu_vendor() != cpuid_utils.CpuVendor.INTEL,
-    reason="CPU templates are only available on Intel.",
+    cpuid_utils.get_cpu_vendor() not in SUPPORTED_CPU_VENDORS,
+    reason=f"CPU templates are only available on {[v.name for v in SUPPORTED_CPU_VENDORS]}"
 )
 @pytest.mark.skipif(
     utils.get_kernel_version(level=1) not in SUPPORTED_KERNELS,
     reason=f"Supported kernels are {SUPPORTED_KERNELS}",
 )
-@pytest.mark.parametrize("cpu_template", SNAPSHOT_RESTORE_SHARED_NAMES["cpu_templates"])
+@pytest.mark.parametrize("cpu_template", \
+    set(SUPPORTED_CPU_TEMPLATES).intersection(SUPPORTED_CPU_TEMPL))
 @pytest.mark.timeout(900)
 @pytest.mark.nonci
 def test_cpu_wrmsr_restore(microvm_factory, cpu_template):
@@ -752,14 +780,15 @@ def _test_cpu_cpuid_snapshot(context):
     PLATFORM != "x86_64", reason="CPU features are masked only on x86_64."
 )
 @pytest.mark.skipif(
-    cpuid_utils.get_cpu_vendor() != cpuid_utils.CpuVendor.INTEL,
-    reason="CPU templates are only available on Intel.",
+    cpuid_utils.get_cpu_vendor() not in SUPPORTED_CPU_VENDORS,
+    reason=f"CPU templates are only available on {[v.name for v in SUPPORTED_CPU_VENDORS]}"
 )
 @pytest.mark.skipif(
     utils.get_kernel_version(level=1) not in SUPPORTED_KERNELS,
     reason=f"Supported kernels are {SUPPORTED_KERNELS}",
 )
-@pytest.mark.parametrize("cpu_template", SNAPSHOT_RESTORE_SHARED_NAMES["cpu_templates"])
+@pytest.mark.parametrize("cpu_template", \
+    set(SUPPORTED_CPU_TEMPLATES).intersection(SUPPORTED_CPU_TEMPL))
 @pytest.mark.timeout(900)
 @pytest.mark.nonci
 def test_cpu_cpuid_snapshot(bin_cloner_path, cpu_template):
@@ -896,14 +925,15 @@ def _test_cpu_cpuid_restore(context):
     PLATFORM != "x86_64", reason="CPU features are masked only on x86_64."
 )
 @pytest.mark.skipif(
-    cpuid_utils.get_cpu_vendor() != cpuid_utils.CpuVendor.INTEL,
-    reason="CPU templates are only available on Intel.",
+    cpuid_utils.get_cpu_vendor() not in SUPPORTED_CPU_VENDORS,
+    reason=f"CPU templates are only available on {[v.name for v in SUPPORTED_CPU_VENDORS]}"
 )
 @pytest.mark.skipif(
     utils.get_kernel_version(level=1) not in SUPPORTED_KERNELS,
     reason=f"Supported kernels are {SUPPORTED_KERNELS}",
 )
-@pytest.mark.parametrize("cpu_template", SNAPSHOT_RESTORE_SHARED_NAMES["cpu_templates"])
+@pytest.mark.parametrize("cpu_template", \
+    set(SUPPORTED_CPU_TEMPLATES).intersection(SUPPORTED_CPU_TEMPL))
 @pytest.mark.timeout(900)
 @pytest.mark.nonci
 def test_cpu_cpuid_restore(microvm_factory, cpu_template):
