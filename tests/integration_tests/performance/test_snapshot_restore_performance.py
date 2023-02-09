@@ -111,6 +111,7 @@ def get_snap_restore_latency(
     """Restore snapshots with various configs to measure latency."""
     vm_builder = context.custom["builder"]
     logger = context.custom["logger"]
+    cpu_template = context.custom["cpu_template"]
     balloon = vsock = 1 if all_devices else 0
     microvm_spec = f"{vcpus}vcpu_{mem_size}mb_{nets}net_{blocks}block_{vsock}vsock_{balloon}balloon"
 
@@ -132,6 +133,7 @@ def get_snap_restore_latency(
         net_ifaces=ifaces,
         use_ramdisk=True,
         io_engine="Sync",
+        cpu_template=cpu_template,
     )
     basevm = vm_instance.vm
     response = basevm.machine_cfg.put(
@@ -177,7 +179,7 @@ def get_snap_restore_latency(
     values = []
     for _ in range(iterations):
         microvm, metrics_fifo = vm_builder.build_from_snapshot(
-            full_snapshot, resume=True, use_ramdisk=True
+            full_snapshot, resume=True, use_ramdisk=True,
         )
         # Attempt to connect to resumed microvm.
         ssh_connection = net_tools.SSHConnection(microvm.ssh_config)
@@ -217,7 +219,7 @@ def consume_output(cons, result):
 @pytest.mark.nonci
 @pytest.mark.timeout(300 * 1000)  # 1.40 hours
 @pytest.mark.parametrize("results_file_dumper", [CONFIG_NAME_ABS], indirect=True)
-def test_snap_restore_performance(bin_cloner_path, results_file_dumper):
+def test_snap_restore_performance(bin_cloner_path, results_file_dumper, perf_cpu_template):
     """
     Test the performance of snapshot restore.
 
@@ -239,6 +241,7 @@ def test_snap_restore_performance(bin_cloner_path, results_file_dumper):
         "name": TEST_ID,
         "results_file_dumper": results_file_dumper,
         "workload": "restore",
+        "cpu_template": perf_cpu_template,
     }
 
     test_matrix = TestMatrix(

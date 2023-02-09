@@ -311,7 +311,7 @@ def pipes(basevm, host_ip, current_avail_cpu, env_id):
 @pytest.mark.nonci
 @pytest.mark.timeout(3600)
 @pytest.mark.parametrize("results_file_dumper", [CONFIG_NAME_ABS], indirect=True)
-def test_network_tcp_throughput(bin_cloner_path, results_file_dumper):
+def test_network_tcp_throughput(bin_cloner_path, results_file_dumper, perf_cpu_template):
     """
     Test network throughput for multiple vm confgurations.
 

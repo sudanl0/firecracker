@@ -129,7 +129,7 @@ def consume_ping_output(cons, raw_data, requests):
 
 @pytest.mark.nonci
 @pytest.mark.timeout(3600)
-def test_network_latency(bin_cloner_path, results_file_dumper):
+def test_network_latency(bin_cloner_path, results_file_dumper, perf_cpu_template):
     """
     Test network latency for multiple vm configurations.
 
@@ -153,6 +153,7 @@ def test_network_latency(bin_cloner_path, results_file_dumper):
         "interval": 0.2,  # Seconds.
         "name": "network_latency",
         "results_file_dumper": results_file_dumper,
+        "cpu_template": perf_cpu_template,
     }
 
     # Create the test matrix.
@@ -171,6 +172,7 @@ def _g2h_send_ping(context):
     interval_between_req = context.custom["interval"]
     name = context.custom["name"]
     file_dumper = context.custom["results_file_dumper"]
+    cpu_template = context.custom["cpu_template"]
 
     logger.info(
         'Testing {} with microvm: "{}", kernel {}, disk {} '.format(
@@ -184,7 +186,7 @@ def _g2h_send_ping(context):
     ssh_key = context.disk.ssh_key()
     # Create a fresh microvm from aftifacts.
     vm_instance = vm_builder.build(
-        kernel=context.kernel, disks=[rw_disk], ssh_key=ssh_key, config=context.microvm
+        kernel=context.kernel, disks=[rw_disk], ssh_key=ssh_key, config=context.microvm, cpu_template=cpu_template,
     )
     basevm = vm_instance.vm
     basevm.start()

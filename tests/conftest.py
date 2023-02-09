@@ -105,6 +105,7 @@ from framework.utils import get_firecracker_version_from_toml
 from framework.with_filelock import with_filelock
 from framework.properties import GLOBAL_PROPS
 from framework.utils_cpu_templates import SUPPORTED_CPU_TEMPLATES
+import framework.utils_cpuid as cpuid_utils
 
 # Tests root directory.
 SCRIPT_FOLDER = os.path.dirname(os.path.realpath(__file__))
@@ -555,6 +556,37 @@ def rootfs(request):
 @pytest.fixture(params=SUPPORTED_CPU_TEMPLATES)
 def cpu_template(request):
     """Return all CPU templates supported by the vendor."""
+    return request.param
+
+
+# CPU templates which support PERF test
+
+def get_perf_supported_templates():
+    """
+    Return the list of CPU templates supported for PERF-related tests.
+    """
+    # CPU templates supported for the MSR tests
+    perf_supported_templates = ["T2A"]
+    #msr_supported_templates = ["T2A", "T2S"]
+
+    # CPU templates which need additional checks are added below:
+
+    # Since the conflict is seen only with Skylake and Cascade lake,
+    # we add T2CL (Cascade Lake) template only when CPU is not Skylake.
+    t2cl_exception_list = [
+        # Note: we may need to update this list if there are
+        # more conflicting CPU models reported in the future.
+        "Intel(R) Xeon(R) Platinum 8175M CPU @ 2.50GHz",  # Skylake
+    ]
+    if cpuid_utils.get_cpu_model_name() not in t2cl_exception_list:
+        perf_supported_templates.append("T2CL")
+    return perf_supported_templates
+
+
+PERF_SUPPORTED_TEMPLATES = get_perf_supported_templates()
+@pytest.fixture(params=set(SUPPORTED_CPU_TEMPLATES).intersection(PERF_SUPPORTED_TEMPLATES))
+def perf_cpu_template(request):
+    """CPU template fixture for PERF read/write supported CPU templates"""
     return request.param
 
 

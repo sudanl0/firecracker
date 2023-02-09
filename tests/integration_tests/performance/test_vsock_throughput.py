@@ -271,7 +271,7 @@ def pipes(basevm, current_avail_cpu, env_id):
 @pytest.mark.nonci
 @pytest.mark.timeout(1200)
 @pytest.mark.parametrize("results_file_dumper", [CONFIG_NAME_ABS], indirect=True)
-def test_vsock_throughput(bin_cloner_path, results_file_dumper):
+def test_vsock_throughput(bin_cloner_path, results_file_dumper, perf_cpu_template):
     """
     Test vsock throughput for multiple vm configurations.
 
@@ -293,6 +293,7 @@ def test_vsock_throughput(bin_cloner_path, results_file_dumper):
         "logger": logger,
         "name": TEST_ID,
         "results_file_dumper": results_file_dumper,
+        "cpu_template": perf_cpu_template,
     }
 
     test_matrix = TestMatrix(
@@ -307,6 +308,7 @@ def iperf_workload(context):
     vm_builder = context.custom["builder"]
     logger = context.custom["logger"]
     file_dumper = context.custom["results_file_dumper"]
+    cpu_template = context.custom["cpu_template"]
 
     # Create a rw copy artifact.
     rw_disk = context.disk.copy()
@@ -314,7 +316,7 @@ def iperf_workload(context):
     ssh_key = context.disk.ssh_key()
     # Create a fresh microvm from artifacts.
     vm_instance = vm_builder.build(
-        kernel=context.kernel, disks=[rw_disk], ssh_key=ssh_key, config=context.microvm
+        kernel=context.kernel, disks=[rw_disk], ssh_key=ssh_key, config=context.microvm, cpu_template=cpu_template,
     )
     basevm = vm_instance.vm
     # Create a vsock device
