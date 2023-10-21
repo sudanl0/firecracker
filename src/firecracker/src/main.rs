@@ -104,6 +104,7 @@ fn main() -> ExitCode {
 }
 
 fn main_exec() -> Result<(), MainError> {
+    println!("##### main_exec");
     // Initialize the logger.
     LOGGER.init().map_err(MainError::SetLogger)?;
 
@@ -245,9 +246,11 @@ fn main_exec() -> Result<(), MainError> {
                     .help("Mmds data store limit, in bytes."),
             );
 
+    println!("######## trying to parse arguments \n");
     arg_parser.parse_from_cmdline()?;
     let arguments = arg_parser.arguments();
 
+    println!("######## arguments {:#?}\n", arguments);
     if arguments.flag_present("help") {
         println!("Firecracker v{}\n", FIRECRACKER_VERSION);
         println!("{}", arg_parser.formatted_help());
@@ -639,4 +642,92 @@ fn run_without_api(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    // use crate::VmState::NotStarted;
+
+    #[test]
+    fn test_run_without_api() -> io::Result<()> {
+        let seccomp_filters: BpfThreadMap = BpfThreadMap::new();
+        // {
+        //     "vcpu": [
+        //         "sock_filter" {
+        //             code: 32,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 4,
+        //         },
+        //         sock_filter {
+        //             code: 21,
+        //             jt: 1,
+        //             jf: 0,
+        //             k: 3221225655,
+        //         },
+        //         sock_filter {
+        //             code: 6,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 2147483648,
+        //         },
+        //         sock_filter {
+        //             code: 6,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 2147418112,
+        //         },
+        //     ],
+        //     "vmm": [
+        //         sock_filter {
+        //             code: 32,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 4,
+        //         },
+        //         sock_filter {
+        //             code: 21,
+        //             jt: 1,
+        //             jf: 0,
+        //             k: 3221225655,
+        //         },
+        //         sock_filter {
+        //             code: 6,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 2147483648,
+        //         },
+        //         sock_filter {
+        //             code: 6,
+        //             jt: 0,
+        //             jf: 0,
+        //             k: 2147418112,
+        //         },
+        //     ],
+        // };
+
+        let vmm_config_json = Some(
+            String::from("{\n  \"boot-source\": {\n    \"kernel_image_path\": \"/tmp/vmlinux.bin\",\n    \"boot_args\": \"console=ttyS0 reboot=k panic=1 pci=off\",\n    \"initrd_path\": null\n  },\n  \"drives\": [\n    {\n      \"drive_id\": \"rootfs\",\n      \"path_on_host\": \"bionic.rootfs.ext4\",\n      \"is_root_device\": true,\n      \"partuuid\": null,\n      \"is_read_only\": false,\n      \"cache_type\": \"Unsafe\",\n      \"io_engine\": \"Sync\",\n      \"rate_limiter\": null\n    }\n  ],\n  \"machine-config\": {\n    \"vcpu_count\": 2,\n    \"mem_size_mib\": 1024,\n    \"smt\": false,\n    \"track_dirty_pages\": false\n  },\n  \"cpu-config\": null,\n  \"balloon\": null,\n  \"network-interfaces\": [],\n  \"vsock\": null,\n  \"logger\": null,\n  \"metrics\": null,\n  \"mmds-config\": null,\n  \"entropy\": null\n}\n"),
+        );
+        let instance_info = InstanceInfo {
+            id: String::from("anonymous-instance"),
+            state: crate::VmState::NotStarted,
+            vmm_version: String::from("1.6.0-dev"),
+            app_name: String::from("Firecracker"),
+        };
+        let boot_timer_enabled = false;
+        let mmds_size_limit = 51200;
+
+        let result = run_without_api(
+            &seccomp_filters,
+            vmm_config_json,
+            instance_info,
+            boot_timer_enabled,
+            mmds_size_limit,
+            None,
+        );
+        println!("{result:#?}");
+        Ok(())
+    }
 }
