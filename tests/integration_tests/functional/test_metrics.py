@@ -5,7 +5,8 @@
 import os
 
 import host_tools.drive as drive_tools
-from host_tools.fcmetrics import FcDeviceMetrics, validate_fc_metrics
+from framework.utils_vsock import VSOCK_UDS_PATH, check_vsock_device
+from host_tools.metrics import FcDeviceMetrics, validate_fc_metrics
 
 
 def test_flush_metrics(test_microvm_with_api):
@@ -85,3 +86,25 @@ def test_block_metrics(test_microvm_with_api):
 
     # check that the started microvm has "block" and "num_block_devices" number of "block_" metrics
     block_metrics.validate(test_microvm)
+
+
+def test_vsock_metrics(
+    test_microvm_with_api, bin_vsock_path, test_fc_session_root_path
+):
+    """
+    Test guest and host vsock initiated connections.
+
+    Check the module docstring for details on the setup.
+    """
+
+    vm = test_microvm_with_api
+    vm.spawn()
+
+    vm.basic_config()
+    vm.add_net_iface()
+    vm.api.vsock.put(vsock_id="vsock0", guest_cid=3, uds_path=f"/{VSOCK_UDS_PATH}")
+    vm.start()
+
+    check_vsock_device(vm, bin_vsock_path, test_fc_session_root_path, vm.ssh)
+    metrics = vm.flush_metrics()
+    validate_fc_metrics(metrics)
