@@ -943,7 +943,7 @@ pub struct FirecrackerMetrics {
     pub signals: SignalMetrics,
     #[serde(flatten)]
     /// Metrics related to virtio-vsockets.
-    pub vsock: vsock_metrics::VsockDeviceMetrics,
+    pub vsock: VsockMetricsSerializeProxy,
     /// Metrics related to virtio-rng entropy device.
     pub entropy_ser: EntropyMetricsSerializeProxy,
     #[serde(flatten)]
@@ -971,7 +971,7 @@ impl FirecrackerMetrics {
             vcpu: VcpuMetrics::new(),
             vmm: VmmMetrics::new(),
             signals: SignalMetrics::new(),
-            vsock: vsock_metrics::VsockDeviceMetrics::new(),
+            vsock: VsockMetricsSerializeProxy {},
             entropy: EntropyDeviceMetrics::new(),
         }
     }

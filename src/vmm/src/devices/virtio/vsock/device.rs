@@ -33,7 +33,7 @@ use super::packet::{VsockPacket, VSOCK_PKT_HDR_SIZE};
 use super::{defs, VsockBackend};
 use crate::devices::virtio::device::{DeviceState, IrqTrigger, IrqType, VirtioDevice};
 use crate::devices::virtio::queue::Queue as VirtQueue;
-use crate::devices::virtio::vsock::metrics::METRICS;
+use crate::devices::virtio::vsock::vsock_metrics::VSOCK_METRICS;
 use crate::devices::virtio::vsock::VsockError;
 use crate::devices::virtio::ActivateError;
 use crate::logger::IncMetric;
@@ -239,7 +239,7 @@ where
         let mem = self.device_state.mem().unwrap();
 
         let head = self.queues[EVQ_INDEX].pop(mem).ok_or_else(|| {
-            METRICS.ev_queue_event_fails.inc();
+            VSOCK_METRICS.ev_queue_event_fails.inc();
             DeviceError::VsockError(VsockError::EmptyQueue)
         })?;
 
@@ -308,7 +308,7 @@ where
                 byte_order::write_le_u32(data, ((self.cid() >> 32) & 0xffff_ffff) as u32)
             }
             _ => {
-                METRICS.cfg_fails.inc();
+                VSOCK_METRICS.cfg_fails.inc();
                 warn!(
                     "vsock: virtio-vsock received invalid read request of {} bytes at offset {}",
                     data.len(),
@@ -319,7 +319,7 @@ where
     }
 
     fn write_config(&mut self, offset: u64, data: &[u8]) {
-        METRICS.cfg_fails.inc();
+        VSOCK_METRICS.cfg_fails.inc();
         warn!(
             "vsock: guest driver attempted to write device config (offset={:x}, len={:x})",
             offset,
@@ -329,7 +329,7 @@ where
 
     fn activate(&mut self, mem: GuestMemoryMmap) -> Result<(), ActivateError> {
         if self.queues.len() != defs::VSOCK_NUM_QUEUES {
-            METRICS.activate_fails.inc();
+            VSOCK_METRICS.activate_fails.inc();
             error!(
                 "Cannot perform activate. Expected {} queue(s), got {}",
                 defs::VSOCK_NUM_QUEUES,
@@ -339,7 +339,7 @@ where
         }
 
         if self.activate_evt.write(1).is_err() {
-            METRICS.activate_fails.inc();
+            VSOCK_METRICS.activate_fails.inc();
             error!("Cannot write to activate_evt",);
             return Err(ActivateError::BadActivate);
         }
