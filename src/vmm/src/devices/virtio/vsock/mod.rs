@@ -19,6 +19,7 @@ mod packet;
 pub mod persist;
 pub mod test_utils;
 mod unix;
+pub mod vsock_metrics;
 
 use std::os::unix::io::AsRawFd;
 
