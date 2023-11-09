@@ -792,6 +792,7 @@ mod tests {
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
 
+    use serial_test::serial;
     use utils::tempfile::TempFile;
 
     use super::super::super::csm::defs as csm_defs;
@@ -1321,6 +1322,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_muxer_killq() {
         wait_for_test_group_completion(1);
         let mut ctx = MuxerTestContext::new("muxer_killq");
@@ -1477,6 +1479,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_vsock_basic_metrics() {
         // Save the metrics values that we need tested.
         let mut tx_packets_count = VSOCK_METRICS.tx_packets_count.count();

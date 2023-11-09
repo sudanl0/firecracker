@@ -685,6 +685,7 @@ mod tests {
     use std::os::unix::io::RawFd;
     use std::time::{Duration, Instant};
 
+    use serial_test::serial;
     use utils::eventfd::EventFd;
     use vm_memory::{VolatileMemoryError, VolatileSlice};
 
@@ -1039,6 +1040,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_local_close() {
         wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
@@ -1063,6 +1065,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_peer_close() {
         wait_for_test_group_completion(2);
         // Test that send/recv shutdown indications are handled correctly.
@@ -1149,6 +1152,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_credit_request_to_peer() {
         wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
@@ -1159,6 +1163,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_credit_request_from_peer() {
         wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
@@ -1172,6 +1177,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_credit_update_to_peer() {
         wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
@@ -1244,6 +1250,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_stream_write_error() {
         wait_for_test_group_completion(2);
         // Test case: sending a data packet to a broken / closed backing stream should kill it.
@@ -1290,6 +1297,7 @@ mod tests {
     }
 
     #[test]
+    #[serial(vsock)] // tests with vsock group run in sequence
     fn test_peer_credit_misbehavior() {
         wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
