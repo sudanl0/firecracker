@@ -185,3 +185,42 @@ pub trait VsockChannel {
 /// Currently, the only implementation we have is `crate::devices::virtio::unix::muxer::VsockMuxer`,
 /// which translates guest-side vsock connections to host-side Unix domain socket connections.
 pub trait VsockBackend: VsockChannel + VsockEpollListener + Send {}
+
+#[cfg(test)]
+pub mod tests {
+    // use std::sync::atomic::AtomicU32;
+    // pub static vsock_metrics_tests_done: std::sync::atomic::AtomicU32 = AtomicU32::new(0);
+    use lazy_static::lazy_static;
+    use std::sync::{Arc, Mutex, Condvar};
+    use std::time::Duration;
+    lazy_static! {
+        pub static ref VSOCK_METRICS_SERIAL_TESTS: std::sync::Arc<(std::sync::Mutex<u8>, Condvar)> = Arc::new((Mutex::new(0), Condvar::new()));
+    }
+
+    pub fn wait_for_test_group_completion(groupd_id: u8) {
+        let lock = &VSOCK_METRICS_SERIAL_TESTS.0;
+        let cvar = &VSOCK_METRICS_SERIAL_TESTS.1;
+        let mut vsock_metrics_tests_done = lock.lock().unwrap();
+        let start_time_us = utils::time::get_time_ms(utils::time::ClockType::Monotonic);
+        for _i in 1..300 {
+            let result = cvar.wait_timeout(vsock_metrics_tests_done, Duration::from_millis(10)).unwrap();
+            // 10 milliseconds have passed, or maybe the value changed!
+            vsock_metrics_tests_done = result.0;
+            if *vsock_metrics_tests_done == groupd_id {
+                // We received the notification and the value has been updated, we can leave.
+                break
+            }
+        }
+        let delta_us = utils::time::get_time_ms(utils::time::ClockType::Monotonic) - start_time_us;
+        println!("Wait of {delta_us:#?}");
+    }
+
+    pub fn notify_test_group_completion(group_id: u8){
+        println!("{group_id:#?} group completed");
+        let lock = &VSOCK_METRICS_SERIAL_TESTS.0;
+        let cvar = &VSOCK_METRICS_SERIAL_TESTS.1;
+        let mut vsock_metrics_tests_done = lock.lock().unwrap();
+        *vsock_metrics_tests_done = group_id;
+        cvar.notify_all();
+    }
+}
