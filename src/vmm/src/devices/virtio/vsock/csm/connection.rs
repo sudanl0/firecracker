@@ -694,6 +694,7 @@ mod tests {
     use crate::devices::virtio::vsock::test_utils;
     use crate::devices::virtio::vsock::test_utils::TestContext;
     use crate::vstate::memory::BitmapSlice;
+    use crate::devices::virtio::vsock::tests::wait_for_test_group_completion;
 
     const LOCAL_CID: u64 = 2;
     const PEER_CID: u64 = 3;
@@ -954,6 +955,7 @@ mod tests {
 
     #[test]
     fn test_peer_request() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new(ConnState::PeerInit);
         assert!(ctx.conn.has_pending_rx());
         ctx.recv();
@@ -973,6 +975,7 @@ mod tests {
 
     #[test]
     fn test_local_request() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new(ConnState::LocalInit);
         // Host-initiated connections should first yield a connection request packet.
         assert!(ctx.conn.has_pending_rx());
@@ -994,6 +997,7 @@ mod tests {
 
     #[test]
     fn test_local_request_timeout() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new(ConnState::LocalInit);
         ctx.recv();
         assert_eq!(ctx.rx_pkt.op(), uapi::VSOCK_OP_REQUEST);
@@ -1007,6 +1011,7 @@ mod tests {
 
     #[test]
     fn test_rx_data() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
         let data = &[1, 2, 3, 4];
         ctx.set_stream(TestStream::new_with_read_buf(data));
@@ -1034,6 +1039,7 @@ mod tests {
 
     #[test]
     fn test_local_close() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
         let mut stream = TestStream::new();
         stream.read_state = StreamState::Closed;
@@ -1057,6 +1063,7 @@ mod tests {
 
     #[test]
     fn test_peer_close() {
+        wait_for_test_group_completion(2);
         // Test that send/recv shutdown indications are handled correctly.
         // I.e. once set, an indication cannot be reset.
         {
@@ -1130,6 +1137,7 @@ mod tests {
 
     #[test]
     fn test_local_read_error() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
         let mut stream = TestStream::new();
         stream.read_state = StreamState::Error(ErrorKind::PermissionDenied);
@@ -1141,6 +1149,7 @@ mod tests {
 
     #[test]
     fn test_credit_request_to_peer() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
         ctx.set_peer_credit(0);
         ctx.notify_epollin();
@@ -1150,6 +1159,7 @@ mod tests {
 
     #[test]
     fn test_credit_request_from_peer() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
         ctx.init_tx_pkt(uapi::VSOCK_OP_CREDIT_REQUEST, 0);
         ctx.send();
@@ -1162,6 +1172,7 @@ mod tests {
 
     #[test]
     fn test_credit_update_to_peer() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
 
         // Force a stale state, where the peer hasn't been updated on our credit situation.
@@ -1199,6 +1210,7 @@ mod tests {
 
     #[test]
     fn test_tx_buffering() {
+        wait_for_test_group_completion(2);
         // Test case:
         // - when writing to the backing stream would block, TX data should end up in the TX buf
         // - when the CSM is notified that it can write to the backing stream, it should flush the
@@ -1232,6 +1244,7 @@ mod tests {
 
     #[test]
     fn test_stream_write_error() {
+        wait_for_test_group_completion(2);
         // Test case: sending a data packet to a broken / closed backing stream should kill it.
         {
             let mut ctx = CsmTestContext::new_established();
@@ -1277,6 +1290,7 @@ mod tests {
 
     #[test]
     fn test_peer_credit_misbehavior() {
+        wait_for_test_group_completion(2);
         let mut ctx = CsmTestContext::new_established();
 
         let mut stream = TestStream::new();

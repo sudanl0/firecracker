@@ -798,6 +798,10 @@ mod tests {
     use crate::devices::virtio::vsock::device::{RXQ_INDEX, TXQ_INDEX};
     use crate::devices::virtio::vsock::test_utils;
     use crate::devices::virtio::vsock::test_utils::TestContext as VsockTestContext;
+    use crate::devices::virtio::vsock::tests::{
+        wait_for_test_group_completion,
+        notify_test_group_completion,
+    };
 
     const PEER_CID: u64 = 3;
     const PEER_BUF_ALLOC: u32 = 64 * 1024;
@@ -994,6 +998,7 @@ mod tests {
 
     #[test]
     fn test_muxer_epoll_listener() {
+        wait_for_test_group_completion(2);
         let ctx = MuxerTestContext::new("muxer_epoll_listener");
         assert_eq!(ctx.muxer.as_raw_fd(), ctx.muxer.epoll.as_raw_fd());
         assert_eq!(ctx.muxer.get_polled_evset(), EventSet::IN);
@@ -1001,6 +1006,7 @@ mod tests {
 
     #[test]
     fn test_muxer_epoll_listener_regression() {
+        wait_for_test_group_completion(2);
         let mut ctx = MuxerTestContext::new("muxer_epoll_listener");
         ctx.local_connect(1025);
 
@@ -1019,6 +1025,7 @@ mod tests {
 
     #[test]
     fn test_bad_peer_pkt() {
+        wait_for_test_group_completion(2);
         const LOCAL_PORT: u32 = 1026;
         const PEER_PORT: u32 = 1025;
         const SOCK_DGRAM: u16 = 2;
@@ -1067,6 +1074,7 @@ mod tests {
 
     #[test]
     fn test_peer_connection() {
+        wait_for_test_group_completion(2);
         const LOCAL_PORT: u32 = 1026;
         const PEER_PORT: u32 = 1025;
 
@@ -1134,7 +1142,7 @@ mod tests {
 
     #[test]
     fn test_local_connection() {
-        // Test guest -> host data flow.
+        wait_for_test_group_completion(2);
         let mut ctx = MuxerTestContext::new("local_connection");
         let peer_port = 1025;
         let (mut stream, local_port) = ctx.local_connect(peer_port);
@@ -1168,6 +1176,7 @@ mod tests {
 
     #[test]
     fn test_local_close() {
+        wait_for_test_group_completion(2);
         let peer_port = 1025;
         let mut ctx = MuxerTestContext::new("local_close");
         let local_port;
@@ -1201,6 +1210,7 @@ mod tests {
 
     #[test]
     fn test_peer_close() {
+        wait_for_test_group_completion(2);
         let peer_port = 1025;
         let local_port = 1026;
         let mut ctx = MuxerTestContext::new("peer_close");
@@ -1246,6 +1256,7 @@ mod tests {
 
     #[test]
     fn test_muxer_rxq() {
+        wait_for_test_group_completion(2);
         let mut ctx = MuxerTestContext::new("muxer_rxq");
         let local_port = 1026;
         let peer_port_first = 1025;
@@ -1310,6 +1321,7 @@ mod tests {
 
     #[test]
     fn test_muxer_killq() {
+        wait_for_test_group_completion(1);
         let mut ctx = MuxerTestContext::new("muxer_killq");
         let local_port = 1026;
         let peer_port_first = 1025;
@@ -1399,10 +1411,12 @@ mod tests {
         assert_eq!(ctx.rx_pkt.dst_port(), peer_port_last + 1);
 
         assert!(!ctx.muxer.has_pending_rx());
+        notify_test_group_completion(2);
     }
 
     #[test]
     fn test_regression_handshake() {
+        wait_for_test_group_completion(2);
         // Address one of the issues found while fixing the following issue:
         // https://github.com/firecracker-microvm/firecracker/issues/1751
         // This test checks that the handshake message is not accounted for
@@ -1425,6 +1439,7 @@ mod tests {
 
     #[test]
     fn test_regression_rxq_pop() {
+        wait_for_test_group_completion(2);
         // Address one of the issues found while fixing the following issue:
         // https://github.com/firecracker-microvm/firecracker/issues/1751
         // This test checks that a connection is not popped out of the muxer
@@ -1526,6 +1541,7 @@ mod tests {
         ctx.send();
 
         // Check that the connection was removed.
-        assert_eq!(METRICS.conns_removed.count(), conns_removed + 1);
+        assert_eq!(VSOCK_METRICS.conns_removed.count(), conns_removed + 1);
+        notify_test_group_completion(1);
     }
 }
