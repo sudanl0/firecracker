@@ -73,6 +73,7 @@ use vm_superio::rtc_pl031::RtcEvents;
 
 use super::FcLineWriter;
 use crate::devices::virtio::net::metrics as net_metrics;
+use crate::devices::virtio::rng::entropy_metrics;
 use crate::devices::virtio::virtio_block::block_metrics;
 #[cfg(target_arch = "aarch64")]
 use crate::warn;
@@ -947,38 +948,6 @@ impl VsockDeviceMetrics {
     }
 }
 
-#[derive(Debug, Default, Serialize)]
-pub struct EntropyDeviceMetrics {
-    /// Number of device activation failures
-    pub activate_fails: SharedIncMetric,
-    /// Number of entropy queue event handling failures
-    pub entropy_event_fails: SharedIncMetric,
-    /// Number of entropy requests handled
-    pub entropy_event_count: SharedIncMetric,
-    /// Number of entropy bytes provided to guest
-    pub entropy_bytes: SharedIncMetric,
-    /// Number of errors while getting random bytes on host
-    pub host_rng_fails: SharedIncMetric,
-    /// Number of times an entropy request was rate limited
-    pub entropy_rate_limiter_throttled: SharedIncMetric,
-    /// Number of events associated with the rate limiter
-    pub rate_limiter_event_count: SharedIncMetric,
-}
-impl EntropyDeviceMetrics {
-    /// Const default construction.
-    pub const fn new() -> Self {
-        Self {
-            activate_fails: SharedIncMetric::new(),
-            entropy_event_fails: SharedIncMetric::new(),
-            entropy_event_count: SharedIncMetric::new(),
-            entropy_bytes: SharedIncMetric::new(),
-            host_rng_fails: SharedIncMetric::new(),
-            entropy_rate_limiter_throttled: SharedIncMetric::new(),
-            rate_limiter_event_count: SharedIncMetric::new(),
-        }
-    }
-}
-
 // The sole purpose of this struct is to produce an UTC timestamp when an instance is serialized.
 #[derive(Debug, Default)]
 struct SerializeToUtcTimestampMs;
@@ -998,37 +967,28 @@ impl Serialize for SerializeToUtcTimestampMs {
     }
 }
 
-#[derive(Default, Debug)]
-// By using the below structure in FirecrackerMetrics it is easy
-// to serialise Firecracker app_metrics as a single json object which
-// otherwise would have required extra string manipulation to pack
-// block as part of the same json object as FirecrackerMetrics.
-pub struct BlockMetricsSerializeProxy;
+macro_rules! create_serialize_proxy {
+    // By using the below structure in FirecrackerMetrics it is easy
+    // to serialise Firecracker app_metrics as a single json object which
+    // otherwise would have required extra string manipulation to pack
+    // $metric_mod as part of the same json object as FirecrackerMetrics.
+    ($proxy_struct:ident, $metric_mod:ident) => {
+        #[derive(Default, Debug)]
+        pub struct $proxy_struct;
 
-impl Serialize for BlockMetricsSerializeProxy {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        block_metrics::flush_metrics(serializer)
-    }
+        impl Serialize for $proxy_struct {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                $metric_mod::flush_metrics(serializer)
+            }
+        }
+    };
 }
-
-#[derive(Default, Debug)]
-// By using the below structure in FirecrackerMetrics it is easy
-// to serialise Firecracker app_metrics as a single json object which
-// otherwise would have required extra string manipulation to pack
-// net as part of the same json object as FirecrackerMetrics.
-pub struct NetMetricsSerializeProxy;
-
-impl Serialize for NetMetricsSerializeProxy {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        net_metrics::flush_metrics(serializer)
-    }
-}
+create_serialize_proxy!(EntropyMetricsSerializeProxy, entropy_metrics);
+create_serialize_proxy!(BlockMetricsSerializeProxy, block_metrics);
+create_serialize_proxy!(NetMetricsSerializeProxy, net_metrics);
 
 /// Structure storing all metrics while enforcing serialization support on them.
 #[derive(Debug, Default, Serialize)]
@@ -1075,8 +1035,9 @@ pub struct FirecrackerMetrics {
     pub signals: SignalMetrics,
     /// Metrics related to virtio-vsockets.
     pub vsock: VsockDeviceMetrics,
+    #[serde(flatten)]
     /// Metrics related to virtio-rng entropy device.
-    pub entropy: EntropyDeviceMetrics,
+    pub entropy_ser: EntropyMetricsSerializeProxy,
 }
 impl FirecrackerMetrics {
     /// Const default construction.
@@ -1103,7 +1064,7 @@ impl FirecrackerMetrics {
             uart: SerialDeviceMetrics::new(),
             signals: SignalMetrics::new(),
             vsock: VsockDeviceMetrics::new(),
-            entropy: EntropyDeviceMetrics::new(),
+            entropy_ser: EntropyMetricsSerializeProxy {},
         }
     }
 }
