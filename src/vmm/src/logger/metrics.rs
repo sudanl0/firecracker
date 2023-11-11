@@ -72,6 +72,7 @@ use serde::{Serialize, Serializer};
 use vm_superio::rtc_pl031::RtcEvents;
 
 use super::FcLineWriter;
+use crate::devices::virtio::balloon::balloon_metrics;
 use crate::devices::virtio::net::metrics as net_metrics;
 use crate::devices::virtio::rng::entropy_metrics;
 use crate::devices::virtio::virtio_block::block_metrics;
@@ -523,36 +524,6 @@ impl DeprecatedApiMetrics {
     }
 }
 
-/// Balloon Device associated metrics.
-#[derive(Debug, Default, Serialize)]
-pub struct BalloonDeviceMetrics {
-    /// Number of times when activate failed on a balloon device.
-    pub activate_fails: SharedIncMetric,
-    /// Number of balloon device inflations.
-    pub inflate_count: SharedIncMetric,
-    // Number of balloon statistics updates from the driver.
-    pub stats_updates_count: SharedIncMetric,
-    // Number of balloon statistics update failures.
-    pub stats_update_fails: SharedIncMetric,
-    /// Number of balloon device deflations.
-    pub deflate_count: SharedIncMetric,
-    /// Number of times when handling events on a balloon device failed.
-    pub event_fails: SharedIncMetric,
-}
-impl BalloonDeviceMetrics {
-    /// Const default construction.
-    pub const fn new() -> Self {
-        Self {
-            activate_fails: SharedIncMetric::new(),
-            inflate_count: SharedIncMetric::new(),
-            stats_updates_count: SharedIncMetric::new(),
-            stats_update_fails: SharedIncMetric::new(),
-            deflate_count: SharedIncMetric::new(),
-            event_fails: SharedIncMetric::new(),
-        }
-    }
-}
-
 /// Metrics specific to the i8042 device.
 #[derive(Debug, Default, Serialize)]
 pub struct I8042DeviceMetrics {
@@ -986,8 +957,9 @@ macro_rules! create_serialize_proxy {
         }
     };
 }
-create_serialize_proxy!(EntropyMetricsSerializeProxy, entropy_metrics);
 create_serialize_proxy!(BlockMetricsSerializeProxy, block_metrics);
+create_serialize_proxy!(BalloonMetricsSerializeProxy, balloon_metrics);
+create_serialize_proxy!(EntropyMetricsSerializeProxy, entropy_metrics);
 create_serialize_proxy!(NetMetricsSerializeProxy, net_metrics);
 
 /// Structure storing all metrics while enforcing serialization support on them.
@@ -996,8 +968,9 @@ pub struct FirecrackerMetrics {
     utc_timestamp_ms: SerializeToUtcTimestampMs,
     /// API Server related metrics.
     pub api_server: ApiServerMetrics,
+    #[serde(flatten)]
     /// A balloon device's related metrics.
-    pub balloon: BalloonDeviceMetrics,
+    pub balloon_ser: BalloonMetricsSerializeProxy,
     #[serde(flatten)]
     /// A block device's related metrics.
     pub block_ser: BlockMetricsSerializeProxy,
@@ -1045,7 +1018,7 @@ impl FirecrackerMetrics {
         Self {
             utc_timestamp_ms: SerializeToUtcTimestampMs::new(),
             api_server: ApiServerMetrics::new(),
-            balloon: BalloonDeviceMetrics::new(),
+            balloon_ser: BalloonMetricsSerializeProxy {},
             block_ser: BlockMetricsSerializeProxy {},
             deprecated_api: DeprecatedApiMetrics::new(),
             get_api_requests: GetRequestsMetrics::new(),

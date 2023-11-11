@@ -3,6 +3,7 @@
 
 //! Implements a virtio balloon device.
 
+pub mod balloon_metrics;
 pub mod device;
 mod event_handler;
 pub mod persist;
@@ -14,8 +15,9 @@ use vm_memory::GuestMemoryError;
 
 pub use self::device::{Balloon, BalloonConfig, BalloonStats};
 use super::queue::QueueError;
+use crate::devices::virtio::balloon::balloon_metrics::BALLOON_METRICS;
 use crate::devices::virtio::queue::FIRECRACKER_MAX_QUEUE_SIZE;
-use crate::logger::{IncMetric, METRICS};
+use crate::logger::IncMetric;
 
 /// Device ID used in MMIO device identification.
 /// Because Balloon is unique per-vm, this ID can be hardcoded.
@@ -109,5 +111,5 @@ pub enum RemoveRegionError {
 
 pub(super) fn report_balloon_event_fail(err: BalloonError) {
     error!("{:?}", err);
-    METRICS.balloon.event_fails.inc();
+    BALLOON_METRICS.event_fails.inc();
 }
