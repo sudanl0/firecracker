@@ -5,55 +5,50 @@
 """Generate Buildkite performance pipelines dynamically"""
 import os
 
-from common import (
-    COMMON_PARSER,
-    get_changed_files,
-    group,
-    overlay_dict,
-    pipeline_to_json,
-    run_all_tests,
-)
+from common import (COMMON_PARSER, get_changed_files, group, overlay_dict,
+                    pipeline_to_json, run_all_tests)
 
 perf_test = {
-    "virtio-block": {
-        "label": "🖴 Virtio Block Performance",
-        "test_path": "integration_tests/performance/test_block_ab.py::test_block_performance",
-        "devtool_opts": "-c 1-10 -m 0",
-    },
-    "vhost-user-block": {
-        "label": "🖴 vhost-user Block Performance",
-        "test_path": "integration_tests/performance/test_block_ab.py::test_block_vhost_user_performance",
-        "devtool_opts": "-c 1-10 -m 0",
-    },
-    "network-latency": {
-        "label": "🖧 Network Latency",
-        "test_path": "integration_tests/performance/test_network_ab.py::test_network_latency",
-        "devtool_opts": "-c 1-10 -m 0",
-    },
-    "network-throughput": {
-        "label": "🖧 Network TCP Throughput",
-        "test_path": "integration_tests/performance/test_network_ab.py::test_network_tcp_throughput",
-        "devtool_opts": "-c 1-10 -m 0",
-    },
-    "snapshot-latency": {
-        "label": "📸 Snapshot Latency",
-        "test_path": "integration_tests/performance/test_snapshot_ab.py",
-        "devtool_opts": "-c 1-12 -m 0",
-    },
+    # "virtio-block": {
+    #     "label": "🖴 Virtio Block Performance",
+    #     "test_path": "integration_tests/performance/test_block_ab.py::test_block_performance",
+    #     "devtool_opts": "-c 1-10 -m 0",
+    # },
+    # "vhost-user-block": {
+    #     "label": "🖴 vhost-user Block Performance",
+    #     "test_path": "integration_tests/performance/test_block_ab.py::test_block_vhost_user_performance",
+    #     "devtool_opts": "-c 1-10 -m 0",
+    # },
+    # "network-latency": {
+    #     "label": "🖧 Network Latency",
+    #     "test_path": "integration_tests/performance/test_network_ab.py::test_network_latency",
+    #     "devtool_opts": "-c 1-10 -m 0",
+    # },
+    # "network-throughput": {
+    #     "label": "🖧 Network TCP Throughput",
+    #     "test_path": "integration_tests/performance/test_network_ab.py::test_network_tcp_throughput",
+    #     "devtool_opts": "-c 1-10 -m 0",
+    # },
+    # "snapshot-latency": {
+    #     "label": "📸 Snapshot Latency",
+    #     "test_path": "integration_tests/performance/test_snapshot_ab.py",
+    #     "devtool_opts": "-c 1-12 -m 0",
+    # },
     "vsock-throughput": {
         "label": "🧦 Vsock Throughput",
         "test_path": "integration_tests/performance/test_vsock_ab.py",
         "devtool_opts": "-c 1-10 -m 0",
     },
-    "memory-overhead": {
-        "label": "💾 Memory Overhead",
-        "test_path": "integration_tests/performance/test_memory_overhead.py --noise-threshold 0.01",
-        "devtool_opts": "-c 1-10 -m 0",
-    },
+    # "memory-overhead": {
+    #     "label": "💾 Memory Overhead",
+    #     "test_path": "integration_tests/performance/test_memory_overhead.py --noise-threshold 0.01",
+    #     "devtool_opts": "-c 1-10 -m 0",
+    # },
 }
 
-REVISION_A = os.environ["REVISION_A"]
-REVISION_B = os.environ["REVISION_B"]
+REVISION_A = os.environ.get("REVISION_A", "HEAD")
+REVISION_B = os.environ.get("REVISION_B", "main")
+EXTRA_ARGS = os.environ.get("EXTRA_ARGS", "")
 
 
 def build_group(test):
@@ -62,7 +57,7 @@ def build_group(test):
     test_path = test.pop("test_path")
     return group(
         label=test.pop("label"),
-        command=f"./tools/devtool -y test --performance --ab {devtool_opts} -- {REVISION_A} {REVISION_B} --test {test_path}",
+        command=f"./tools/devtool -y test --performance --ab {devtool_opts} -- {REVISION_A} {REVISION_B} --test {test_path} {EXTRA_ARGS}",
         artifacts=["./test_results/*"],
         instances=test.pop("instances"),
         platforms=test.pop("platforms"),
