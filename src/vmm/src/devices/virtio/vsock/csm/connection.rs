@@ -82,7 +82,7 @@ use std::num::Wrapping;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::time::{Duration, Instant};
 
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use utils::epoll::EventSet;
 use utils::wrap_usize_to_u32;
 use vm_memory::io::{ReadVolatile, WriteVolatile};
@@ -389,7 +389,7 @@ where
             }
 
             _ => {
-                debug!(
+                info!(
                     "vsock: dropping invalid TX pkt for connection: state={:?}, pkt.hdr={:?}",
                     self.state,
                     pkt.hdr()
