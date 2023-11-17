@@ -173,7 +173,7 @@ impl VsockChannel for VsockMuxer {
                     });
                 }
 
-                debug!("vsock muxer: RX pkt: {:?}", pkt.hdr());
+                info!("vsock muxer: RX pkt: {:?}", pkt.hdr());
                 return Ok(());
             }
         }
