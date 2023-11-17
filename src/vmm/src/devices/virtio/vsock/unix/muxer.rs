@@ -195,7 +195,7 @@ impl VsockChannel for VsockMuxer {
             peer_port: pkt.src_port(),
         };
 
-        debug!(
+        info!(
             "vsock: muxer.send[rxq.len={}]: {:?}",
             self.rxq.len(),
             pkt.hdr()
