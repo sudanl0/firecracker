@@ -696,7 +696,7 @@ impl VsockMuxer {
                 if *evset != new_evset {
                     // If the set of events that the connection is interested in has changed,
                     // we need to update its epoll listener.
-                    debug!(
+                    info!(
                         "vsock: updating listener for (lp={}, pp={}): old={:?}, new={:?}",
                         key.local_port, key.peer_port, *evset, new_evset
                     );
