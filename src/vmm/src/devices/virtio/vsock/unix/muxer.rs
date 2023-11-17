@@ -334,7 +334,7 @@ impl VsockMuxer {
 
     /// Handle/dispatch an epoll event to its listener.
     fn handle_event(&mut self, fd: RawFd, event_set: EventSet) {
-        debug!(
+        info!(
             "vsock: muxer processing event: fd={}, evset={:?}",
             fd, event_set
         );
