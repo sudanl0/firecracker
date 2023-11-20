@@ -29,14 +29,14 @@ class HostEchoWorker(Thread):
     contents of `blob_path`.
     """
 
-    def __init__(self, i, uds_path, blob_path):
+    def __init__(self, i, uds_path, blob_path, ssh_connection, logger):
         """."""
         super().__init__()
         self.uds_path = uds_path
         self.blob_path = blob_path
         self.hash = None
         self.error = None
-        self.sock = _vsock_connect_to_guest(i, self.uds_path, ECHO_SERVER_PORT)
+        self.sock = _vsock_connect_to_guest(i, self.uds_path, ECHO_SERVER_PORT, ssh_connection, logger)
 
     def run(self):
         """Thread code payload.
@@ -99,9 +99,13 @@ def start_guest_echo_server(vm):
 
     Returns a UDS path to connect to the server.
     """
-    cmd = f"nohup socat VSOCK-LISTEN:{ECHO_SERVER_PORT},backlog=128,reuseaddr,fork EXEC:'/bin/cat' > /dev/null 2>&1 &"
-    ecode, _, stderr = vm.ssh.run(cmd)
-    assert ecode == 0, stderr
+    # import pdb
+    # pdb.set_trace()
+    ecode, stdout, stderr = vm.ssh.run("pgrep spcat")
+    if ecode:
+        cmd = f"nohup socat VSOCK-LISTEN:{ECHO_SERVER_PORT},backlog=128,reuseaddr,fork EXEC:'/bin/cat' > /dev/null 2>&1 &"
+        ecode, _, stderr = vm.ssh.run(cmd)
+        assert ecode == 0, stderr
 
     # Give the server time to initialise
     time.sleep(1)
@@ -109,7 +113,7 @@ def start_guest_echo_server(vm):
     return os.path.join(vm.jailer.chroot_path(), VSOCK_UDS_PATH)
 
 
-def check_host_connections(uds_path, blob_path, blob_hash):
+def check_host_connections(uds_path, blob_path, blob_hash, ssh_connection, logger):
     """Test host-initiated connections.
 
     This will spawn `TEST_CONNECTION_COUNT` `HostEchoWorker` threads.
@@ -120,7 +124,7 @@ def check_host_connections(uds_path, blob_path, blob_hash):
 
     workers = []
     for i in range(TEST_CONNECTION_COUNT):
-        worker = HostEchoWorker(i, uds_path, blob_path)
+        worker = HostEchoWorker(i, uds_path, blob_path, ssh_connection, logger)
         workers.append(worker)
         worker.start()
 
@@ -197,7 +201,7 @@ def make_host_port_path(uds_path, port):
     return "{}_{}".format(uds_path, port)
 
 
-def _vsock_connect_to_guest(i, uds_path, port):
+def _vsock_connect_to_guest(i, uds_path, port, ssh_connection, logger):
     """Return a Unix socket, connected to the guest vsock port `port`."""
 
     def foo():
@@ -224,8 +228,12 @@ def _vsock_connect_to_guest(i, uds_path, port):
             continue
 
     if fails == attempts:
+        ecode, stdout, stderr = ssh_connection.run("ps -aux | grep socat | wc -l")
+        # logger.info(f"{ecode=}")
+        logger.info(f" ^^^^ {stdout=}")
+        logger.info(f"{stderr=}")
         raise ValueError(
-            f"Could not connect {i} worker to the vsock after {attempts} attempts"
+            f" Could not connect {i} worker to the vsock after {attempts} attempts =="
         )
     else:
         return sock
@@ -258,4 +266,4 @@ def check_vsock_device(vm, bin_vsock_path, test_fc_session_root_path, ssh_connec
 
     # Test vsock host-initiated connections.
     path = start_guest_echo_server(vm)
-    check_host_connections(path, blob_path, blob_hash)
+    check_host_connections(path, blob_path, blob_hash, ssh_connection)

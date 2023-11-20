@@ -55,7 +55,7 @@ build_grp = group(
 
 functional_grp = group(
     "⚙ Functional and security 🔒",
-    "./tools/devtool -y test -- -s -n 8 --dist worksteal integration_tests/functional/test_snapshot_basic.py -k test_5_snapshots",
+    "./tools/devtool -y test -- -s -n 8 --dist worksteal integration_tests/functional/test_snapshot_basic.py::test_5_snapshots",
     **defaults,
 )
 

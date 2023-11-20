@@ -12,10 +12,10 @@ from pathlib import Path
 
 DEFAULT_INSTANCES = [
     "m5d.metal",
-    "m6i.metal",
-    "m6a.metal",
-    "m6g.metal",
-    "c7g.metal",
+    # "m6i.metal",
+    # "m6a.metal",
+    # "m6g.metal",
+    # "c7g.metal",
 ]
 
 DEFAULT_PLATFORMS = [

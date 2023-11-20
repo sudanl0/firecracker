@@ -126,12 +126,26 @@ def test_5_snapshots(
         )
         check_guest_connections(microvm, path, vm_blob_path, blob_hash)
         # Test vsock host-initiated connections.
+        ecode, stdout, stderr = microvm.ssh.run("pkill -9 socat")
+        logger.info(f"^^^^^ {ecode=}{stdout=}{stderr=}")
+        logger.info(f"^^^^^ Starting again")
         path = start_guest_echo_server(microvm)
 
+        ecode, stdout, stderr = microvm.ssh.run("ps -aux | grep socat | wc -l")
+        # logger.info(f"{i=} {ecode=}")
+        logger.info(f"{i=} {stdout=}")
+        # logger.info(f"{i=} {stderr=}\n")
+
         try:
-            check_host_connections(path, blob_path, blob_hash)
+            check_host_connections(path, blob_path, blob_hash, microvm.ssh, logger)
         except ValueError as E:
-            logger.info("VM LOGS: %s", microvm.log_data)
+            # logger.info("VM LOGS: %s", microvm.log_data)
+            ecode, stdout, stderr = microvm.ssh.run("ps -aux | grep socat | wc -l")
+            # logger.info(f"{ecode=}")
+            logger.info(f"###### {i=} {stdout=}")
+            # logger.info(f"{stderr=}\n")
+            metrics=microvm.flush_metrics()
+            logger.info(metrics)
             raise E
 
         # Check that the root device is not corrupted.
