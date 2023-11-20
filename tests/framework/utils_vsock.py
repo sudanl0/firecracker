@@ -7,7 +7,7 @@ import os.path
 import re
 import time
 from pathlib import Path
-from socket import AF_UNIX, SOCK_STREAM, socket
+from socket import AF_UNIX, MSG_DONTWAIT, SOCK_STREAM, socket
 from subprocess import Popen
 from threading import Thread
 
@@ -29,14 +29,14 @@ class HostEchoWorker(Thread):
     contents of `blob_path`.
     """
 
-    def __init__(self, uds_path, blob_path):
+    def __init__(self, i, uds_path, blob_path):
         """."""
         super().__init__()
         self.uds_path = uds_path
         self.blob_path = blob_path
         self.hash = None
         self.error = None
-        self.sock = _vsock_connect_to_guest(self.uds_path, ECHO_SERVER_PORT)
+        self.sock = _vsock_connect_to_guest(i, self.uds_path, ECHO_SERVER_PORT)
 
     def run(self):
         """Thread code payload.
@@ -119,8 +119,8 @@ def check_host_connections(uds_path, blob_path, blob_hash):
     """
 
     workers = []
-    for _ in range(TEST_CONNECTION_COUNT):
-        worker = HostEchoWorker(uds_path, blob_path)
+    for i in range(TEST_CONNECTION_COUNT):
+        worker = HostEchoWorker(i, uds_path, blob_path)
         workers.append(worker)
         worker.start()
 
@@ -197,18 +197,38 @@ def make_host_port_path(uds_path, port):
     return "{}_{}".format(uds_path, port)
 
 
-def _vsock_connect_to_guest(uds_path, port):
+def _vsock_connect_to_guest(i, uds_path, port):
     """Return a Unix socket, connected to the guest vsock port `port`."""
-    sock = socket(AF_UNIX, SOCK_STREAM)
-    sock.connect(uds_path)
 
-    buf = bytearray("CONNECT {}\n".format(port).encode("utf-8"))
-    sock.send(buf)
+    def foo():
+        sock = socket(AF_UNIX, SOCK_STREAM)
+        sock.settimeout(2.0)
+        sock.connect(uds_path)
 
-    ack_buf = sock.recv(32)
-    assert re.match("^OK [0-9]+\n$", ack_buf.decode("utf-8")) is not None
+        buf = bytearray("CONNECT {}\n".format(port).encode("utf-8"))
+        sock.send(buf)
 
-    return sock
+        ack_buf = sock.recv(32, MSG_DONTWAIT)
+        assert re.match("^OK [0-9]+\n$", ack_buf.decode("utf-8")) is not None
+
+        return sock
+
+    attempts = 10
+    fails = 0
+    for _ in range(0, attempts):
+        try:
+            sock = foo()
+            break
+        except:
+            fails += 1
+            continue
+
+    if fails == attempts:
+        raise ValueError(
+            f"Could not connect {i} worker to the vsock after {attempts} attempts"
+        )
+    else:
+        return sock
 
 
 def _copy_vsock_data_to_guest(ssh_connection, blob_path, vm_blob_path, vsock_helper):

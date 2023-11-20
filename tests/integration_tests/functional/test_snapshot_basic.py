@@ -127,7 +127,12 @@ def test_5_snapshots(
         check_guest_connections(microvm, path, vm_blob_path, blob_hash)
         # Test vsock host-initiated connections.
         path = start_guest_echo_server(microvm)
-        check_host_connections(path, blob_path, blob_hash)
+
+        try:
+            check_host_connections(path, blob_path, blob_hash)
+        except ValueError as E:
+            logger.info("VM LOGS: %s", microvm.log_data)
+            raise E
 
         # Check that the root device is not corrupted.
         check_filesystem(microvm.ssh, "squashfs", "/dev/vda")

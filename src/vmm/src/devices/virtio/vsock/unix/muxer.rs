@@ -173,7 +173,7 @@ impl VsockChannel for VsockMuxer {
                     });
                 }
 
-                debug!("vsock muxer: RX pkt: {:?}", pkt.hdr());
+                // debug!("vsock muxer: RX pkt: {:?}", pkt.hdr());
                 return Ok(());
             }
         }
@@ -195,11 +195,11 @@ impl VsockChannel for VsockMuxer {
             peer_port: pkt.src_port(),
         };
 
-        debug!(
-            "vsock: muxer.send[rxq.len={}]: {:?}",
-            self.rxq.len(),
-            pkt.hdr()
-        );
+        // debug!(
+        //     "vsock: muxer.send[rxq.len={}]: {:?}",
+        //     self.rxq.len(),
+        //     pkt.hdr()
+        // );
 
         // If this packet has an unsupported type (!=stream), we must send back an RST.
         //
@@ -334,15 +334,19 @@ impl VsockMuxer {
 
     /// Handle/dispatch an epoll event to its listener.
     fn handle_event(&mut self, fd: RawFd, event_set: EventSet) {
-        debug!(
-            "vsock: muxer processing event: fd={}, evset={:?}",
-            fd, event_set
-        );
+        // debug!(
+        //     "vsock: muxer processing event: fd={}, evset={:?}",
+        //     fd, event_set
+        // );
 
         match self.listener_map.get_mut(&fd) {
             // This event needs to be forwarded to a `MuxerConnection` that is listening for
             // it.
             Some(EpollListener::Connection { key, evset: _ }) => {
+                debug!(
+                    "vsock: connection event: fd={}, evset={:?} {}, {}",
+                    fd, event_set, key.local_port, key.peer_port
+                );
                 let key_copy = *key;
                 // The handling of this event will most probably mutate the state of the
                 // receiving connection. We'll need to check for new pending RX, event set
@@ -390,6 +394,9 @@ impl VsockMuxer {
                     Self::read_local_stream_port(&mut stream)
                         .map(|peer_port| (self.allocate_local_port(), peer_port))
                         .and_then(|(local_port, peer_port)| {
+                            debug!("add connection: {local_port:x}, {peer_port:x}");
+                            debug!("rxq: {:#?}", self.rxq);
+                            debug!("killq: {:#?}", self.killq);
                             self.add_connection(
                                 ConnMapKey {
                                     local_port,
@@ -476,6 +483,7 @@ impl VsockMuxer {
         key: ConnMapKey,
         conn: MuxerConnection,
     ) -> Result<(), VsockUnixBackendError> {
+        debug!("adding conection start");
         // We might need to make room for this new connection, so let's sweep the kill queue
         // first.  It's fine to do this here because:
         // - unless the kill queue is out of sync, this is a pretty inexpensive operation; and
@@ -490,23 +498,26 @@ impl VsockMuxer {
             return Err(VsockUnixBackendError::TooManyConnections);
         }
 
-        self.add_listener(
-            conn.as_raw_fd(),
-            EpollListener::Connection {
-                key,
-                evset: conn.get_polled_evset(),
-            },
-        )
-        .map(|_| {
-            if conn.has_pending_rx() {
-                // We can safely ignore any error in adding a connection RX indication. Worst
-                // case scenario, the RX queue will get desynchronized, but we'll handle that
-                // the next time we need to yield an RX packet.
-                self.rxq.push(MuxerRx::ConnRx(key));
-            }
-            self.conn_map.insert(key, conn);
-            METRICS.conns_added.inc();
-        })
+        let r = self
+            .add_listener(
+                conn.as_raw_fd(),
+                EpollListener::Connection {
+                    key,
+                    evset: conn.get_polled_evset(),
+                },
+            )
+            .map(|_| {
+                if conn.has_pending_rx() {
+                    // We can safely ignore any error in adding a connection RX indication. Worst
+                    // case scenario, the RX queue will get desynchronized, but we'll handle that
+                    // the next time we need to yield an RX packet.
+                    self.rxq.push(MuxerRx::ConnRx(key));
+                }
+                self.conn_map.insert(key, conn);
+                METRICS.conns_added.inc();
+            });
+        debug!("adding conection end");
+        r
     }
 
     /// Remove a connection from the active connection poll.
@@ -655,9 +666,15 @@ impl VsockMuxer {
             // If this is a host-initiated connection that has just become established, we'll have
             // to send an ack message to the host end.
             if prev_state == ConnState::LocalInit && conn.state() == ConnState::Established {
+                debug!("apply_conn_mutation: sending ack message");
                 let msg = format!("OK {}\n", key.local_port);
                 match conn.send_bytes_raw(msg.as_bytes()) {
-                    Ok(written) if written == msg.len() => (),
+                    Ok(written) if written == msg.len() => {
+                        debug!(
+                            "vsock: written ack msg: {:x} {:x}",
+                            key.local_port, key.peer_port
+                        );
+                    }
                     Ok(_) => {
                         // If we can't write a dozen bytes to a pristine connection something
                         // must be really wrong. Killing it.
@@ -669,6 +686,19 @@ impl VsockMuxer {
                         warn!("vsock: unable to ack host connection: {:?}", err);
                     }
                 };
+            } else {
+                debug!(
+                    "not acking connection: {:x}, {:x}",
+                    key.local_port, key.peer_port
+                );
+                debug!(
+                    "prev_state: {prev_state:#?}, curr_state: {:#?}",
+                    conn.state()
+                );
+                debug!(
+                    "was_expiring: {was_expiring}, will_expire: {}",
+                    conn.will_expire()
+                );
             }
 
             // If the connection wasn't previously scheduled for RX, add it to our RX queue.
@@ -681,6 +711,7 @@ impl VsockMuxer {
             if !was_expiring && conn.will_expire() {
                 // It's safe to unwrap here, since `conn.will_expire()` already guaranteed that
                 // an `conn.expiry` is available.
+                debug!("adding to killq: {:x} {:x}", key.local_port, key.peer_port);
                 self.killq.push(key, conn.expiry().unwrap());
             }
 
@@ -722,6 +753,7 @@ impl VsockMuxer {
             } else {
                 // The connection had previously asked to be removed from the listener map (by
                 // returning an empty event set via `get_polled_fd()`), but now wants back in.
+                debug!("adding listener: {:x} {:x}", key.local_port, key.peer_port);
                 self.add_listener(
                     fd,
                     EpollListener::Connection {
@@ -737,6 +769,7 @@ impl VsockMuxer {
                     );
                     METRICS.muxer_event_fails.inc();
                 });
+                debug!("added listener: {:x} {:x}", key.local_port, key.peer_port);
             }
         }
     }

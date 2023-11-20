@@ -176,6 +176,7 @@ where
         // Next up: if we're due a connection confirmation, that's all we need to know to fill
         // in this packet.
         if self.pending_rx.remove(PendingRx::Response) {
+            debug!("recv_pkt: Established");
             self.state = ConnState::Established;
             pkt.set_op(uapi::VSOCK_OP_RESPONSE);
             return Ok(());
@@ -298,6 +299,7 @@ where
         self.peer_fwd_cnt = Wrapping(pkt.fwd_cnt());
         METRICS.tx_packets_count.inc();
 
+        debug!("send_pkt: state: {:#?}, op: {:#?}", self.state, pkt.op());
         match self.state {
             // Most frequent case: this is an established connection that needs to forward some
             // data to the host stream. Also works for a connection that has begun shutting
@@ -337,6 +339,7 @@ where
             // We'll move to an Established state, and pass on the good news through the host
             // stream.
             ConnState::LocalInit if pkt.op() == uapi::VSOCK_OP_RESPONSE => {
+                debug!("send_pkt: Established");
                 self.expiry = None;
                 self.state = ConnState::Established;
             }
