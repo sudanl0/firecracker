@@ -674,11 +674,18 @@ impl Env {
 
         // Daemonize before exec, if so required (when the dev_null variable != None).
         if let Some(dev_null) = dev_null {
-            // Call setsid().
             // SAFETY: Safe because it's a library function.
-            SyscallReturnCode(unsafe { libc::setsid() })
-                .into_empty_result()
-                .map_err(JailerError::SetSid)?;
+            let pgid = unsafe { libc::getpgid(0) };
+            // SAFETY: Safe because it's a library function.
+            let pid = unsafe { libc::getpid() };
+
+            // Call setsid() only if jailer is not a process group leader.
+            if pgid != pid {
+                // SAFETY: Safe because it's a library function.
+                SyscallReturnCode(unsafe { libc::setsid() })
+                    .into_empty_result()
+                    .map_err(JailerError::SetSid)?;
+            }
 
             // Replace the stdio file descriptors with the /dev/null fd.
             dup2(dev_null.as_raw_fd(), STDIN_FILENO)?;
