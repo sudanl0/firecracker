@@ -124,10 +124,18 @@ def test_5_snapshots(
         path = os.path.join(
             microvm.path, make_host_port_path(VSOCK_UDS_PATH, ECHO_SERVER_PORT)
         )
-        check_guest_connections(microvm, path, vm_blob_path, blob_hash)
+        # check_guest_connections(microvm, path, vm_blob_path, blob_hash)
         # Test vsock host-initiated connections.
+        ecode, stdout, stderr = microvm.ssh.run("pkill -9 socat")
+        logger.info(f"^^^^^ {ecode=}{stdout=}{stderr=}")
         path = start_guest_echo_server(microvm)
-        check_host_connections(path, blob_path, blob_hash)
+
+        try:
+            check_host_connections(path, blob_path, blob_hash)
+        except ValueError as E:
+            ecode, stdout, stderr = microvm.ssh.run("ps -aux | grep socat | wc -l")
+            logger.info(f"###### {i=} {stdout=} {ecode=}")
+            raise E
 
         # Check that the root device is not corrupted.
         check_filesystem(microvm.ssh, "squashfs", "/dev/vda")

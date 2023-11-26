@@ -7,7 +7,7 @@ import os.path
 import re
 import time
 from pathlib import Path
-from socket import AF_UNIX, SOCK_STREAM, socket
+from socket import AF_UNIX, MSG_DONTWAIT, SOCK_STREAM, socket
 from subprocess import Popen
 from threading import Thread
 
@@ -199,17 +199,29 @@ def make_host_port_path(uds_path, port):
 
 def _vsock_connect_to_guest(uds_path, port):
     """Return a Unix socket, connected to the guest vsock port `port`."""
-    sock = socket(AF_UNIX, SOCK_STREAM)
-    sock.connect(uds_path)
 
-    buf = bytearray("CONNECT {}\n".format(port).encode("utf-8"))
-    sock.send(buf)
+    attempts=10
+    for _ in range(0, attempts):
+        try:
+            sock = socket(AF_UNIX, SOCK_STREAM)
+            sock.settimeout(2.0)
+            sock.connect(uds_path)
 
-    ack_buf = sock.recv(32)
-    assert re.match("^OK [0-9]+\n$", ack_buf.decode("utf-8")) is not None
+            buf = bytearray("CONNECT {}\n".format(port).encode("utf-8"))
+            sock.send(buf)
+
+            ack_buf = sock.recv(32, MSG_DONTWAIT)
+            assert re.match("^OK [0-9]+\n$", ack_buf.decode("utf-8")) is not None
+
+            return sock
+        except:
+            pass
+
+    raise ValueError(
+        f" Could not connect worker to the vsock after {attempts=} =="
+    )
 
     return sock
-
 
 def _copy_vsock_data_to_guest(ssh_connection, blob_path, vm_blob_path, vsock_helper):
     # Copy the data file and a vsock helper to the guest.
