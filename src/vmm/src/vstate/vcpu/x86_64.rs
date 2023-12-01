@@ -21,7 +21,8 @@ use crate::arch::x86_64::interrupts;
 use crate::arch::x86_64::msr::{create_boot_msr_entries, MsrError};
 use crate::arch::x86_64::regs::{SetupFpuError, SetupRegistersError, SetupSpecialRegistersError};
 use crate::cpu_config::x86_64::{cpuid, CpuConfiguration};
-use crate::logger::{IncMetric, METRICS};
+use crate::logger::{IncMetric, StoreMetric, METRICS};
+use crate::record_latency_summary;
 use crate::vstate::memory::{Address, GuestAddress, GuestMemoryMmap};
 use crate::vstate::vcpu::{VcpuConfig, VcpuEmulation};
 use crate::vstate::vm::Vm;
@@ -515,15 +516,19 @@ impl KvmVcpu {
         match exit {
             VcpuExit::IoIn(addr, data) => {
                 if let Some(pio_bus) = &self.pio_bus {
+                    let start_time = utils::time::get_time_us(utils::time::ClockType::Monotonic);
                     pio_bus.read(u64::from(addr), data);
                     METRICS.vcpu.exit_io_in.inc();
+                    record_latency_summary!(METRICS.vcpu.exit_io_in_agg, start_time);
                 }
                 Ok(VcpuEmulation::Handled)
             }
             VcpuExit::IoOut(addr, data) => {
                 if let Some(pio_bus) = &self.pio_bus {
+                    let start_time = utils::time::get_time_us(utils::time::ClockType::Monotonic);
                     pio_bus.write(u64::from(addr), data);
                     METRICS.vcpu.exit_io_out.inc();
+                    record_latency_summary!(METRICS.vcpu.exit_io_out_agg, start_time);
                 }
                 Ok(VcpuEmulation::Handled)
             }

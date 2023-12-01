@@ -24,9 +24,9 @@ use utils::signal::{register_signal_handler, sigrtmin, Killable};
 use utils::sm::StateMachine;
 
 use crate::cpu_config::templates::{CpuConfiguration, GuestConfigError};
-use crate::logger::{IncMetric, METRICS};
+use crate::logger::{IncMetric, StoreMetric, METRICS};
 use crate::vstate::vm::Vm;
-use crate::FcExitCode;
+use crate::{record_latency_summary, FcExitCode};
 
 /// Module with aarch64 vCPU implementation.
 #[cfg(target_arch = "aarch64")]
@@ -450,15 +450,21 @@ impl Vcpu {
             Ok(run) => match run {
                 VcpuExit::MmioRead(addr, data) => {
                     if let Some(mmio_bus) = &self.kvm_vcpu.mmio_bus {
+                        let start_time =
+                            utils::time::get_time_us(utils::time::ClockType::Monotonic);
                         mmio_bus.read(addr, data);
                         METRICS.vcpu.exit_mmio_read.inc();
+                        record_latency_summary!(METRICS.vcpu.exit_mmio_read_agg, start_time);
                     }
                     Ok(VcpuEmulation::Handled)
                 }
                 VcpuExit::MmioWrite(addr, data) => {
                     if let Some(mmio_bus) = &self.kvm_vcpu.mmio_bus {
+                        let start_time =
+                            utils::time::get_time_us(utils::time::ClockType::Monotonic);
                         mmio_bus.write(addr, data);
                         METRICS.vcpu.exit_mmio_write.inc();
+                        record_latency_summary!(METRICS.vcpu.exit_mmio_write_agg, start_time);
                     }
                     Ok(VcpuEmulation::Handled)
                 }

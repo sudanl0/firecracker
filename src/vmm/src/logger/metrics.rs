@@ -78,6 +78,26 @@ use crate::devices::virtio::vhost_user_metrics;
 use crate::devices::virtio::virtio_block::metrics as block_metrics;
 use crate::devices::virtio::vsock::metrics as vsock_metrics;
 
+#[macro_export]
+/// records aggregate (min/max/sum) for the given $metrics
+/// This macro captures delta between start_time and current time
+/// and updates min/max/sum metrics so it expects that start_time
+/// is captured at the appropriate location.
+macro_rules! record_latency_summary {
+    ($metrics:expr, $start_time:ident) => {
+        let delta_us = utils::time::get_time_us(utils::time::ClockType::Monotonic) - $start_time;
+        $metrics.sum_us.add(delta_us);
+        let min_us = $metrics.min_us.fetch();
+        let max_us = $metrics.max_us.fetch();
+        if (0 == min_us) || (min_us > delta_us) {
+            $metrics.min_us.store(delta_us);
+        }
+        if (0 == max_us) || (max_us < delta_us) {
+            $metrics.max_us.store(delta_us);
+        }
+    };
+}
+
 /// Static instance used for handling metrics.
 pub static METRICS: Metrics<FirecrackerMetrics, FcLineWriter> =
     Metrics::<FirecrackerMetrics, FcLineWriter>::new(FirecrackerMetrics::new());
@@ -692,6 +712,27 @@ impl SignalMetrics {
     }
 }
 
+/// Used to record Aggregate (min/max/sum) of latency metrics
+#[derive(Debug, Default, Serialize)]
+pub struct LatencyAggregateMetrics {
+    /// represents minimum value of the metrics in microseconds
+    pub min_us: SharedStoreMetric,
+    /// represents maximum value of the metrics in microseconds
+    pub max_us: SharedStoreMetric,
+    /// represents sum of the metrics in microseconds
+    pub sum_us: SharedIncMetric,
+}
+impl LatencyAggregateMetrics {
+    /// Const default construction.
+    pub const fn new() -> Self {
+        Self {
+            min_us: SharedStoreMetric::new(),
+            max_us: SharedStoreMetric::new(),
+            sum_us: SharedIncMetric::new(),
+        }
+    }
+}
+
 /// Metrics specific to VCPUs' mode of functioning.
 #[derive(Debug, Default, Serialize)]
 pub struct VcpuMetrics {
@@ -705,6 +746,14 @@ pub struct VcpuMetrics {
     pub exit_mmio_write: SharedIncMetric,
     /// Number of errors during this VCPU's run.
     pub failures: SharedIncMetric,
+    /// Min/max/sum for KVM exits handling input IO.
+    pub exit_io_in_agg: LatencyAggregateMetrics,
+    /// Min/max/sum for KVM exits handling output IO.
+    pub exit_io_out_agg: LatencyAggregateMetrics,
+    /// Min/max/sum for KVM exits handling MMIO reads.
+    pub exit_mmio_read_agg: LatencyAggregateMetrics,
+    /// Min/max/sum for KVM exits handling MMIO writes.
+    pub exit_mmio_write_agg: LatencyAggregateMetrics,
 }
 impl VcpuMetrics {
     /// Const default construction.
@@ -715,6 +764,10 @@ impl VcpuMetrics {
             exit_mmio_read: SharedIncMetric::new(),
             exit_mmio_write: SharedIncMetric::new(),
             failures: SharedIncMetric::new(),
+            exit_io_in_agg: LatencyAggregateMetrics::new(),
+            exit_io_out_agg: LatencyAggregateMetrics::new(),
+            exit_mmio_read_agg: LatencyAggregateMetrics::new(),
+            exit_mmio_write_agg: LatencyAggregateMetrics::new(),
         }
     }
 }
