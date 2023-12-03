@@ -661,6 +661,7 @@ impl VirtioDevice for VirtioBlock {
             return Err(super::super::ActivateError::BadActivate);
         }
         self.device_state = DeviceState::Activated(mem);
+        self.metrics.activate_fails.inc();
         Ok(())
     }
 

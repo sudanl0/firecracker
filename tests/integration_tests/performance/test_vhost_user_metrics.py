@@ -40,8 +40,15 @@ def test_vhost_user_block_metrics(
     # vhost-user-block is activated during boot but it takes a while so we wait.
     # 300msec picked by the limited number of experiments tried to see how long
     # it takes to get the activate_time_us metrics.
-    time.sleep(0.3)
-
+    if "5.10" in str(guest_kernel):
+        if vcpu_count == 1:
+            time.sleep(0.15)
+        else:
+            time.sleep(0.25)
+    else:
+        time.sleep(0.036)
+    fc_metrics = vm.flush_metrics()
+    # assert fc_metrics["block_rootfs"]["activate_fails"]
     metrics.set_dimensions(
         {
             "performance_test": "vhost_user_block_metrics",
@@ -49,7 +56,7 @@ def test_vhost_user_block_metrics(
             **vm.dimensions,
         }
     )
-    fc_metrics = vm.flush_metrics()
+
     assert 0 == fc_metrics["vhost_user_block_scratch"]["activate_fails"]
     assert fc_metrics["vhost_user_block_scratch"]["init_time_us"]
     assert fc_metrics["vhost_user_block_scratch"]["activate_time_us"]
