@@ -10,6 +10,8 @@
 import datetime
 import math
 import platform
+import time
+from threading import Thread
 
 import jsonschema
 
@@ -363,3 +365,134 @@ class FcDeviceMetrics:
         if self.aggr_supported:
             metrics_aggregate = fc_metrics[self.dev_name]
             assert metrics_aggregate == metrics_calculated
+
+
+def get_emf_unit_for_fc_metrics(full_key):
+    """Returns CloudWatch Unit for requested FC metrics key"""
+    # We need to check each key because unit can be in group or key
+    # e.g.  latencies_us.diff_create_snapshot and
+    #       api_server.process_startup_time_us
+    for key in full_key.lower().split("."):
+        if key.endswith("_bytes") or key.endswith("_bytes_count"):
+            return "Bytes"
+        if key.endswith("_ms"):
+            return "Milliseconds"
+        if key.endswith("_us"):
+            return "Microseconds"
+    return "Count"
+
+
+def flush_fc_metrics_to_cw(fc_metrics, metrics):
+    """
+    Flush Firecracker metrics to CloudWatch
+    Use a new metrics logger and existing dimensions
+    Add a prefix "fc_metrics." to differentiate these metrics.
+    NOTE:
+        There are metrics with keywords "fail", "err",
+        "num_faults", "panic" in their name and represent
+        some kind of failure in Firecracker.
+        This function `does not` assert on these failure metrics
+        since some tests might not want to assert on them while
+        some tests might want to assert on some but not others.
+    """
+    # List of SharedStoreMetric that once updated have the same value thoughout the life of vm
+    metrics_to_export_once = {
+        "api_server.process_startup_time_us",
+        "api_server.process_startup_time_cpu_us",
+        "latencies_us.full_create_snapshot",
+        "latencies_us.diff_create_snapshot",
+        "latencies_us.load_snapshot",
+        "latencies_us.pause_vm",
+        "latencies_us.resume_vm",
+        "latencies_us.vmm_full_create_snapshot",
+        "latencies_us.vmm_diff_create_snapshot",
+        "latencies_us.vmm_load_snapshot",
+        "latencies_us.vmm_pause_vm",
+        "latencies_us.vmm_resume_vm",
+    }
+    skip = set()
+    for group, keys in fc_metrics.items():
+        if group == "utc_timestamp_ms":
+            continue
+        for key, value in keys.items():
+            full_key = f"{group}.{key}"
+            # values are 0 when:
+            # - there is no update
+            # - device is not used
+            # - SharedIncMetric reset to 0 on flush so if
+            #   there is no change metric the values remain 0.
+            # We can save the amount of bytes we export to
+            # CloudWatch in these cases.
+            # The other cases of 0 are failures in which case
+            # it is up to the test wether or not to assert on them.
+            if value != 0:
+                if full_key in skip:
+                    continue
+                unit = get_emf_unit_for_fc_metrics(key)
+                metrics.put_metric(f"fc_metrics.{full_key}", value, unit=unit)
+                # print(f"fc_metrics.{full_key} {value}, unit={unit}")
+                if full_key in metrics_to_export_once:
+                    skip.add(full_key)
+
+
+class FCMetricsMonitor(Thread):
+    """
+    read Firecracker metrics from the microvm every 60secs and
+    uploads the metrics to CW.
+    We do this as a daemon thread every 60sec, instead of collecting
+    all metrics together in the end, to retain timestamp of the metrics.
+    """
+
+    def __init__(self, vm, metrics_logger, timer=60):
+        Thread.__init__(self, daemon=True)
+        self.vm = vm
+        self.timer = timer
+
+        self.metrics_index = 0
+        self.running = True
+
+        self.metrics_logger = metrics_logger
+
+    def _flush_metrics(self):
+        """
+        Since vm.flush_metrics provides only the latest metrics,
+        we call vm.get_all_metrics() instead to be able to collect
+        and upload all metrics data emitted by the microvm.
+        This utility function is created to keep common code in one
+        place and is called every 60sec once the daemon starts and then
+        once when the daemon stops.
+        """
+        all_metrics = self.vm.get_all_metrics()
+        for metrics in all_metrics[self.metrics_index :]:
+            flush_fc_metrics_to_cw(metrics, self.metrics_logger)
+            self.metrics_index += 1
+
+    def stop(self):
+        """
+        Stop the daemon gracefully.
+        Since we depend on the vm to provide the metrics,
+        this method should be called just before killing the vm.
+        We collect final metrics here in stop instead of letting it
+        be collected from the "run" method because, "run" could be
+        in sleep when stop is called and once it wakes out of sleep
+        the "vm" might not be avaiable to provide the metrics.
+        """
+        self.running = False
+        # wait for the running thread to finish
+        # this should also avoid any race condition leading to
+        # uploading the same metrics twice
+        time.sleep(1)
+        self.vm.api.actions.put(action_type="FlushMetrics")
+        self._flush_metrics()
+
+    def run(self):
+        while self.running is True:
+            self._flush_metrics()
+            # instead of a time.sleep(60) sleep in intervals of 1 sec
+            # so that we can terminate the thread sooner.
+            # this way we can also make stop() wait for 1 sec before
+            # it collects and uploads metrics
+            for _x in range(self.timer):
+                time.sleep(1)
+                if self.running is False:
+                    break
