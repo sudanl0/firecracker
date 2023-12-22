@@ -116,7 +116,7 @@ environments it becomes necessary to support targeted tracing without
 run-time re-configuration, for this compile-time filtering must be used.
 
 To reproduce the same filtering as run-time at compile-time, you can use
-[`clippy-tracing`](../src/clippy-tracing)
+[`clippy-tracing`](../src/clippy-tracin)
 at compile-time like:
 
 ```bash
