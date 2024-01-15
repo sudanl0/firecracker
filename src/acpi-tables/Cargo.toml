@@ -1,0 +1,13 @@
+[package]
+name = "acpi_tables"
+version = "0.1.0"
+authors = ["Amazon Firecracker team <firecracker-devel@amazon.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thiserror = "1.0.32"
+displaydoc = "0.2.4"
+vm-memory = { version = "0.13.1", features = ["backend-mmap", "backend-bitmap"] }
+zerocopy = { version = "0.7.32", features = ["derive"] }
