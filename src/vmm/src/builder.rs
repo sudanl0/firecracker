@@ -28,6 +28,7 @@ use vm_memory::ReadVolatile;
 use vm_superio::Rtc;
 use vm_superio::Serial;
 
+use crate::acpi::{AcpiManager, AcpiManagerError};
 use crate::arch::InitrdConfig;
 #[cfg(target_arch = "aarch64")]
 use crate::construct_kvm_mpidrs;
@@ -116,6 +117,8 @@ pub enum StartMicrovmError {
     CreateEntropyDevice(crate::devices::virtio::rng::EntropyError),
     /// Failed to allocate guest resource: {0}
     AllocateResources(#[from] vm_allocator::Error),
+    /// Error configuring ACPI: {0}
+    Acpi(#[from] AcpiManagerError),
 }
 
 /// It's convenient to automatically convert `linux_loader::cmdline::Error`s
@@ -200,6 +203,8 @@ fn create_vmm_and_vcpus(
         vcpus
     };
 
+    let acpi_manager = AcpiManager::new(resource_allocator.clone())?;
+
     let vmm = Vmm {
         events_observer: Some(std::io::stdin()),
         instance_info: instance_info.clone(),
@@ -213,6 +218,7 @@ fn create_vmm_and_vcpus(
         mmio_device_manager,
         #[cfg(target_arch = "x86_64")]
         pio_device_manager,
+        acpi_manager,
     };
 
     Ok((vmm, vcpus))
@@ -296,7 +302,7 @@ pub fn build_microvm_for_boot(
     attach_legacy_devices_aarch64(event_manager, &mut vmm, &mut boot_cmdline).map_err(Internal)?;
 
     configure_system_for_boot(
-        &vmm,
+        &mut vmm,
         vcpus.as_mut(),
         &vm_resources.vm_config,
         &cpu_template,
@@ -683,7 +689,7 @@ fn create_vcpus(vm: &Vm, vcpu_count: u8, exit_evt: &EventFd) -> Result<Vec<Vcpu>
 /// Configures the system for booting Linux.
 #[cfg_attr(target_arch = "aarch64", allow(unused))]
 pub fn configure_system_for_boot(
-    vmm: &Vmm,
+    vmm: &mut Vmm,
     vcpus: &mut [Vcpu],
     vm_config: &VmConfig,
     cpu_template: &CustomCpuTemplate,
@@ -741,6 +747,12 @@ pub fn configure_system_for_boot(
             .map_err(VmmError::VcpuConfigure)
             .map_err(Internal)?;
     }
+
+    // Create ACPI tables and write them in guest memory
+    vmm.acpi_manager
+        .create_acpi_tables(&vmm.guest_memory, vcpus)?;
+    // Also pass ACPI-related info via the command line
+    //vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -950,6 +962,7 @@ pub mod tests {
     use utils::tempfile::TempFile;
 
     use super::*;
+    use crate::acpi::AcpiManager;
     use crate::arch::DeviceType;
     use crate::device_manager::resources::ResourceAllocator;
     use crate::devices::virtio::block_common::CacheType;
@@ -996,6 +1009,10 @@ pub mod tests {
 
     fn default_mmio_device_manager() -> MMIODeviceManager {
         MMIODeviceManager::new(Rc::new(ResourceAllocator::new().unwrap())).unwrap()
+    }
+
+    fn default_acpi_manager() -> AcpiManager {
+        AcpiManager::new(Rc::new(ResourceAllocator::new().unwrap())).unwrap()
     }
 
     fn cmdline_contains(cmdline: &Cmdline, slug: &str) -> bool {
@@ -1050,6 +1067,7 @@ pub mod tests {
             EventFd::new(libc::EFD_NONBLOCK).unwrap(),
         )
         .unwrap();
+        let acpi_manager = default_acpi_manager();
 
         #[cfg(target_arch = "x86_64")]
         setup_interrupt_controller(&mut vm).unwrap();
@@ -1074,6 +1092,7 @@ pub mod tests {
             mmio_device_manager,
             #[cfg(target_arch = "x86_64")]
             pio_device_manager,
+            acpi_manager,
         }
     }
 

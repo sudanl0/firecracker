@@ -158,6 +158,7 @@ impl Sdt for Fadt {
 
     fn write_to_guest<M: GuestMemory>(&mut self, mem: &M, address: GuestAddress) -> Result<()> {
         self.header.set_checksum(checksum(&[self.as_bytes()]));
+        assert_eq!(checksum(&[self.as_bytes()]), 0);
         mem.write_slice(self.as_bytes(), address)?;
         Ok(())
     }
