@@ -12,7 +12,6 @@ mod gdt;
 pub mod interrupts;
 /// Layout for the x86_64 system.
 pub mod layout;
-mod mptable;
 /// Logic for configuring x86_64 model specific registers (MSRs).
 pub mod msr;
 /// Logic for configuring x86_64 registers.
@@ -40,8 +39,6 @@ const E820_RESERVED: u32 = 2;
 pub enum ConfigurationError {
     /// Invalid e820 setup params.
     E820Configuration,
-    /// Error writing MP table to memory: {0}
-    MpTableSetup(#[from] mptable::MptableError),
     /// Error writing the zero page of guest memory.
     ZeroPageSetup,
     /// Failed to compute initrd address.
@@ -118,7 +115,6 @@ pub fn configure_system(
     cmdline_addr: GuestAddress,
     cmdline_size: usize,
     initrd: &Option<InitrdConfig>,
-    num_cpus: u8,
 ) -> Result<(), ConfigurationError> {
     const KERNEL_BOOT_FLAG_MAGIC: u16 = 0xaa55;
     const KERNEL_HDR_MAGIC: u32 = 0x5372_6448;
@@ -128,9 +124,6 @@ pub fn configure_system(
     let end_32bit_gap_start = GuestAddress(MMIO_MEM_START);
 
     let himem_start = GuestAddress(layout::HIMEM_START);
-
-    // Note that this puts the mptable at the last 1k of Linux's 640k base RAM
-    mptable::setup_mptable(guest_mem, num_cpus)?;
 
     let mut params = boot_params::default();
 
@@ -233,28 +226,23 @@ mod tests {
 
     #[test]
     fn test_system_configuration() {
-        let no_vcpus = 4;
-        let gm = single_region_mem(0x10000);
-        let config_err = configure_system(&gm, GuestAddress(0), 0, &None, 1);
-        assert_eq!(
-            config_err.unwrap_err(),
-            super::ConfigurationError::MpTableSetup(mptable::MptableError::NotEnoughMemory)
-        );
-
         // Now assigning some memory that falls before the 32bit memory hole.
         let mem_size = 128 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
 
         // Now assigning some memory that is equal to the start of the 32bit memory hole.
         let mem_size = 3328 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
 
         // Now assigning some memory that falls after the 32bit memory hole.
         let mem_size = 3330 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
     }
 
     #[test]
