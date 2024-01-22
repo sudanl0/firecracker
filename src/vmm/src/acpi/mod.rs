@@ -5,7 +5,11 @@ use crate::{
     vstate::memory::{GuestAddress, GuestMemoryMmap},
     Vcpu,
 };
-use acpi_tables::{aml, Aml};
+use acpi_tables::{
+    aml,
+    fadt::{FADT_F_HW_REDUCED_ACPI, FADT_F_PWR_BUTTON, FADT_F_SLP_BUTTON},
+    Aml,
+};
 use acpi_tables::{AddressSpace, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt};
 use log::debug;
 use vm_allocator::AllocPolicy;
@@ -124,6 +128,9 @@ impl AcpiManager {
             x_pm1a_evt_blk,
             x_pm1a_cnt_blk,
             HYPERVISOR_VENDOR_ID,
+        );
+        fadt.set_flags(
+            1 << FADT_F_HW_REDUCED_ACPI | 1 << FADT_F_PWR_BUTTON | 1 << FADT_F_SLP_BUTTON,
         );
         setup_arch_fadt(&mut fadt);
         self.write_acpi_table(mem, &mut fadt)

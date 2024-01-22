@@ -41,4 +41,4 @@ pub const IOAPIC_ADDR: u32 = 0xfec0_0000;
 pub const ACPI_MEM_START: u64 = HIMEM_START;
 
 /// Size of memory region for ACPI data (1KB of memory at the moment).
-pub const ACPI_MEM_SIZE: u64 = 1024;
+pub const ACPI_MEM_SIZE: u64 = 4096;
