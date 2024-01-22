@@ -749,8 +749,12 @@ pub fn configure_system_for_boot(
     }
 
     // Create ACPI tables and write them in guest memory
-    vmm.acpi_manager
-        .create_acpi_tables(&vmm.guest_memory, vcpus)?;
+    vmm.acpi_manager.create_acpi_tables(
+        &vmm.guest_memory,
+        vcpus,
+        &vmm.mmio_device_manager,
+        &vmm.pio_device_manager,
+    )?;
     // Also pass ACPI-related info via the command line
     //vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
 

@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
+    device_manager::{legacy::PortIODeviceManager, mmio::MMIODeviceManager},
     vstate::memory::{GuestAddress, GuestMemoryMmap},
     Vcpu,
 };
@@ -77,19 +78,28 @@ impl AcpiManager {
         &mut self,
         mem: &GuestMemoryMmap,
         vcpus: &[Vcpu],
+        mmio: &MMIODeviceManager,
+        pio: &PortIODeviceManager,
     ) -> Result<u64, AcpiManagerError> {
         debug!("acpi: building DSDT table");
         let mut dsdt_data = Vec::new();
+
+        // CPU-related Aml data
         let hid = aml::Name::new("_HID".into(), &"ACPI0010");
         let uid = aml::Name::new("_CID".into(), &aml::EisaName::new("PNP0A05"));
         let cpu_methods = aml::Method::new("CSCN".into(), 0, true, vec![]);
         let mut cpu_inner_data: Vec<&dyn Aml> = vec![&hid, &uid, &cpu_methods];
-
         for vcpu in vcpus {
             cpu_inner_data.push(vcpu);
         }
-
         aml::Device::new("_SB_.CPUS".into(), cpu_inner_data).append_aml_bytes(&mut dsdt_data);
+
+        // Virtio-devices DSDT data
+        mmio.append_aml_bytes(&mut dsdt_data);
+
+        // Legacy-IO devices DSDT data
+        pio.append_aml_bytes(&mut dsdt_data);
+
         let mut dsdt = Dsdt::new(OEM_ID, *b"FCVMDSDT", OEM_REVISION, dsdt_data);
         self.write_acpi_table(mem, &mut dsdt)
     }
@@ -134,8 +144,10 @@ impl AcpiManager {
         &mut self,
         mem: &GuestMemoryMmap,
         vcpus: &[Vcpu],
+        mmio: &MMIODeviceManager,
+        pio: &PortIODeviceManager,
     ) -> Result<(), AcpiManagerError> {
-        let dsdt_addr = self.build_dsdt(mem, vcpus)?;
+        let dsdt_addr = self.build_dsdt(mem, vcpus, mmio, pio)?;
         let fadt_addr = self.build_fadt(mem, dsdt_addr)?;
         let madt_addr = self.build_madt(mem, vcpus)?;
 

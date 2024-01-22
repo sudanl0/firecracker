@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use acpi_tables::{aml, Aml};
 use kvm_ioctls::{IoEventAddress, VmFd};
 use linux_loader::cmdline as kernel_cmdline;
 use log::info;
@@ -60,7 +61,7 @@ pub enum MmioError {
     RegisterIrqFd(kvm_ioctls::Error),
 }
 
-/// This represents the size of the mmio device specified to the kernel as a cmdline option
+/// This represents the size of the mmio device specified to the kernel through ACPI.
 /// It has to be larger than 0x100 (the offset where the configuration space starts from
 /// the beginning of the memory mapped device registers) + the size of the configuration space
 /// Currently hardcoded to 4K.
@@ -191,8 +192,6 @@ impl MMIODeviceManager {
     ) -> Result<MMIODeviceInfo, MmioError> {
         let device_info = self.allocate_mmio_resources(1)?;
         self.register_mmio_virtio(vm, device_id, mmio_device, &device_info)?;
-        #[cfg(target_arch = "x86_64")]
-        Self::add_virtio_device_to_cmdline(_cmdline, &device_info)?;
         Ok(device_info)
     }
 
@@ -433,6 +432,37 @@ impl MMIODeviceManager {
                 }
                 Ok(())
             });
+    }
+}
+
+impl Aml for MMIODeviceManager {
+    fn append_aml_bytes(&self, v: &mut Vec<u8>) {
+        let mut device_cnt = 1u8;
+        let _ = self.for_each_virtio_device::<_, ()>(
+            |_device_type, _device_id, device_info, _bus_device| {
+                aml::Device::new(
+                    format!("VR{:02}", device_cnt).as_str().into(),
+                    vec![
+                        &aml::Name::new("_HID".into(), &"LNRO0005"),
+                        &aml::Name::new("_UID".into(), &device_cnt),
+                        &aml::Name::new(
+                            "_CRS".into(),
+                            &aml::ResourceTemplate::new(vec![
+                                &aml::Memory32Fixed::new(
+                                    true,
+                                    device_info.addr.try_into().unwrap(),
+                                    device_info.len.try_into().unwrap(),
+                                ),
+                                &aml::Interrupt::new(true, true, false, false, device_info.irqs[0]),
+                            ]),
+                        ),
+                    ],
+                )
+                .append_aml_bytes(v);
+                device_cnt += 1;
+                Ok(())
+            },
+        );
     }
 }
 
