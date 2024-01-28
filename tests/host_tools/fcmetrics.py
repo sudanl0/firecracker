@@ -410,6 +410,7 @@ def flush_fc_metrics_to_cw(fc_metrics, metrics):
                 # an expected value in some cases so we upload
                 # all the metrics even if data is 0.
                 unit = get_emf_unit_for_fc_metrics(final_full_key)
+                print(f"=====> {metrics.logger.context.dimensions}")
                 metrics.put_metric(f"fc_metrics.{final_full_key}", value, unit=unit)
 
     # List of SharedStoreMetric that once updated have the same value thoughout the life of vm
