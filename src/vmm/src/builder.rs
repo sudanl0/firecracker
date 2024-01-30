@@ -748,14 +748,6 @@ pub fn configure_system_for_boot(
             .map_err(Internal)?;
     }
 
-    // Create ACPI tables and write them in guest memory
-    vmm.acpi_manager.create_acpi_tables(
-        &vmm.guest_memory,
-        vcpus,
-        &vmm.mmio_device_manager,
-        #[cfg(target_arch = "x86_64")]
-        &vmm.pio_device_manager,
-    )?;
     // Also pass ACPI-related info via the command line
     // vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
 
@@ -780,13 +772,31 @@ pub fn configure_system_for_boot(
             initrd,
         )
         .map_err(ConfigureSystem)?;
+
+        // Create ACPI tables and write them in guest memory
+        vmm.acpi_manager.create_acpi_tables(
+            &vmm.guest_memory,
+            vcpus,
+            &vmm.mmio_device_manager,
+            &vmm.pio_device_manager,
+        )?;
     }
+
     #[cfg(target_arch = "aarch64")]
     {
         let vcpu_mpidr = vcpus
             .iter_mut()
             .map(|cpu| cpu.kvm_vcpu.get_mpidr())
             .collect();
+
+        // Create ACPI tables and write them in guest memory
+        vmm.acpi_manager.create_acpi_tables(
+            &vmm.guest_memory,
+            vcpus,
+            &vmm.mmio_device_manager,
+            vmm.vm.get_irqchip(),
+        )?;
+
         let cmdline = boot_cmdline.as_cstring()?;
         crate::arch::aarch64::configure_system(
             &vmm.guest_memory,
@@ -798,6 +808,7 @@ pub fn configure_system_for_boot(
         )
         .map_err(ConfigureSystem)?;
     }
+
     Ok(())
 }
 
