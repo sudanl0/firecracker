@@ -152,10 +152,17 @@ impl AcpiManager {
         &mut self,
         mem: &GuestMemoryMmap,
         vcpus: &[Vcpu],
+        #[cfg(target_arch = "aarch64")] gic: &arch::aarch64::gic::GICDevice,
     ) -> Result<u64, AcpiManagerError> {
         debug!("acpi: building MADT table");
         let mut madt = Madt::new(OEM_ID, *b"FCVMMADT", OEM_REVISION, arch::APIC_ADDR);
+        #[cfg(target_arch = "x86_64")]
         setup_interrupt_controllers(&mut madt, vcpus.len().try_into().unwrap());
+
+        // pass vcpus to extract nr_cpus and mpidr
+        #[cfg(target_arch = "aarch64")]
+        setup_interrupt_controllers(&mut madt, vcpus, gic);
+
         self.write_acpi_table(mem, &mut madt)
     }
 
@@ -165,13 +172,19 @@ impl AcpiManager {
         vcpus: &[Vcpu],
         mmio: &MMIODeviceManager,
         #[cfg(target_arch = "x86_64")] pio: &PortIODeviceManager,
+        #[cfg(target_arch = "aarch64")] gic: &arch::aarch64::gic::GICDevice,
     ) -> Result<(), AcpiManagerError> {
         #[cfg(target_arch = "x86_64")]
         let dsdt_addr = self.build_dsdt(mem, vcpus, mmio, pio)?;
         #[cfg(target_arch = "aarch64")]
         let dsdt_addr = self.build_dsdt(mem, vcpus, mmio)?;
         let fadt_addr = self.build_fadt(mem, dsdt_addr)?;
-        let madt_addr = self.build_madt(mem, vcpus)?;
+        let madt_addr = self.build_madt(
+            mem,
+            vcpus,
+            #[cfg(target_arch = "aarch64")]
+            gic,
+        )?;
 
         let mut xsdt = Xsdt::new(
             OEM_ID,

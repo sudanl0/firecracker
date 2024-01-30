@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem::size_of;
 
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemory};
@@ -54,12 +55,168 @@ impl IoAPIC {
     }
 }
 
-#[derive(Debug)]
+#[cfg(target_arch = "aarch64")]
+#[allow(dead_code)]
+#[repr(packed)]
+#[derive(Debug, AsBytes)]
+/// See section 5.2.12.14 GIC CPU Interface (GICC) Structure in ACPI spec.
+pub struct GicC {
+    pub r#type: u8,
+    pub length: u8,
+    pub reserved0: u16,
+    pub cpu_interface_number: u32,
+    pub uid: u32,
+    pub flags: u32,
+    pub parking_version: u32,
+    pub performance_interrupt: u32,
+    pub parked_address: u64,
+    pub base_address: u64,
+    pub gicv_base_address: u64,
+    pub gich_base_address: u64,
+    pub vgic_interrupt: u32,
+    pub gicr_base_address: u64,
+    pub mpidr: u64,
+    pub proc_power_effi_class: u8,
+    pub reserved1: u8,
+    pub spe_overflow_interrupt: u16,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl GicC {
+    pub fn new(cpu_id: u8, mpidr: u64) -> Self {
+        // /* ARMv8 MPIDR format:
+        //         Bits [63:40] Must be zero
+        //         Bits [39:32] Aff3 : Match Aff3 of target processor MPIDR
+        //         Bits [31:24] Must be zero
+        //         Bits [23:16] Aff2 : Match Aff2 of target processor MPIDR
+        //         Bits [15:8] Aff1 : Match Aff1 of target processor MPIDR
+        //         Bits [7:0] Aff0 : Match Aff0 of target processor MPIDR
+        // */
+        let mpidr_mask = 0xff_00ff_ffff;
+        Self {
+            r#type: 0xB, // 5.2.12.14 GIC CPU Interface (GICC) Structure
+            length: 80,
+            reserved0: 0,
+            cpu_interface_number: cpu_id as u32,
+            uid: cpu_id as u32,
+            flags: 1,
+            parking_version: 0,
+            performance_interrupt: 0,
+            parked_address: 0,
+            base_address: 0,
+            gicv_base_address: 0,
+            gich_base_address: 0,
+            vgic_interrupt: 0,
+            gicr_base_address: 0,
+            mpidr: mpidr & mpidr_mask,
+            proc_power_effi_class: 0,
+            reserved1: 0,
+            spe_overflow_interrupt: 0,
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[allow(dead_code)]
+#[repr(packed)]
+#[derive(Debug, AsBytes)]
+// GIC Distributor structure. See section 5.2.12.15 in ACPI spec.
+pub struct GicD {
+    pub r#type: u8,
+    pub length: u8,
+    pub reserved0: u16,
+    pub gic_id: u32,
+    pub base_address: u64,
+    pub global_irq_base: u32,
+    pub version: u8,
+    pub reserved1: [u8; 3],
+}
+
+#[cfg(target_arch = "aarch64")]
+impl GicD {
+    pub fn new(dist_addr: u64) -> Self {
+        Self {
+            r#type: 0xC,
+            length: 24,
+            reserved0: 0,
+            gic_id: 0,
+            base_address: dist_addr,
+            global_irq_base: 0,
+            version: 3,
+            reserved1: [0; 3],
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[allow(dead_code)]
+#[repr(packed)]
+#[derive(Debug, AsBytes)]
+// See 5.2.12.17 GIC Redistributor (GICR) Structure in ACPI spec.
+pub struct GicR {
+    pub r#type: u8,
+    pub length: u8,
+    pub reserved: u16,
+    pub base_address: u64,
+    pub range_length: u32,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl GicR {
+    pub fn new(redists_addr: u64, redists_size: u32) -> Self {
+        Self {
+            r#type: 0xE,
+            length: 16,
+            reserved: 0,
+            base_address: redists_addr,
+            range_length: redists_size,
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[allow(dead_code)]
+#[repr(packed)]
+#[derive(Debug, AsBytes)]
+// See 5.2.12.18 GIC Interrupt Translation Service (ITS) Structure in ACPI spec.
+pub struct GicIts {
+    pub r#type: u8,
+    pub length: u8,
+    pub reserved0: u16,
+    pub translation_id: u32,
+    pub base_address: u64,
+    pub reserved1: u32,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl GicIts {
+    pub fn new(its_addr: u64) -> Self {
+        Self {
+            r#type: 0xF,
+            length: 20,
+            reserved0: 0,
+            translation_id: 0,
+            base_address: its_addr,
+            reserved1: 0,
+        }
+    }
+}
+
 pub struct Madt {
     header: SdtHeader,
     base_address: U32,
     flags: U32,
     interrupt_controllers: Vec<u8>,
+}
+
+impl fmt::Debug for Madt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "header : {:#?}\n", self.header)?;
+        write!(f, "base_address : {:#?}\n", self.base_address)?;
+        write!(f, "flags : {:#?}\n", self.flags)?;
+        write!(f, "interrupt_controllers : {:#?}\n", ())?;
+        Ok(())
+    }
 }
 
 impl Madt {
@@ -89,8 +246,7 @@ impl Madt {
         }
     }
 
-    #[cfg(target_arch = "x86_64")]
-    fn add_interrupt_controller(&mut self, ic: &[u8]) {
+    pub fn add_interrupt_controller(&mut self, ic: &[u8]) {
         self.interrupt_controllers.extend(ic);
         self.header.length += U32::new(ic.len().try_into().unwrap());
     }
@@ -134,7 +290,7 @@ impl Sdt for Madt {
         let address = address
             .checked_add(size_of::<u32>() as u64)
             .ok_or(AcpiError::InvalidGuestAddress)?;
-        mem.write_slice(self.interrupt_controllers.as_bytes(), address)?;
+        mem.write_slice(self.interrupt_controllers.as_slice(), address)?;
 
         Ok(())
     }
