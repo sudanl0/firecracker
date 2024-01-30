@@ -396,8 +396,8 @@ impl<'a> Persist<'a> for MMIODeviceManager {
                     )?;
 
                     dev_manager
-                        .address_allocator
-                        .allocate(
+                        .resource_allocator
+                        .allocate_mmio_memory(
                             MMIO_LEN,
                             MMIO_LEN,
                             AllocPolicy::ExactMatch(state.device_info.addr),
@@ -417,8 +417,8 @@ impl<'a> Persist<'a> for MMIODeviceManager {
                         &crate::devices::legacy::rtc_pl031::METRICS,
                     ));
                     dev_manager
-                        .address_allocator
-                        .allocate(
+                        .resource_allocator
+                        .allocate_mmio_memory(
                             MMIO_LEN,
                             MMIO_LEN,
                             AllocPolicy::ExactMatch(state.device_info.addr),

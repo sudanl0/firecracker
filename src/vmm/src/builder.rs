@@ -753,10 +753,11 @@ pub fn configure_system_for_boot(
         &vmm.guest_memory,
         vcpus,
         &vmm.mmio_device_manager,
+        #[cfg(target_arch = "x86_64")]
         &vmm.pio_device_manager,
     )?;
     // Also pass ACPI-related info via the command line
-    //vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
+    // vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
 
     #[cfg(target_arch = "x86_64")]
     {

@@ -89,6 +89,7 @@ impl Madt {
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
     fn add_interrupt_controller(&mut self, ic: &[u8]) {
         self.interrupt_controllers.extend(ic);
         self.header.length += U32::new(ic.len().try_into().unwrap());

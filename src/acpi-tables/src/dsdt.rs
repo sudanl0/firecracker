@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem::size_of;
 
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemory};
@@ -5,10 +6,17 @@ use zerocopy::AsBytes;
 
 use crate::{checksum, AcpiError, Result, Sdt, SdtHeader};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Dsdt {
     header: SdtHeader,
     definition_block: Vec<u8>,
+}
+
+impl fmt::Debug for Dsdt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "header : {:#?}\n", self.header)?;
+        Ok(())
+    }
 }
 
 impl Dsdt {

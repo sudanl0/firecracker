@@ -1,3 +1,5 @@
+use std::{fmt, str};
+
 use vm_memory::{Bytes, GuestAddress, GuestMemory};
 use zerocopy::little_endian::{U32, U64};
 use zerocopy::AsBytes;
@@ -10,7 +12,7 @@ use crate::{checksum, Result, Sdt};
 /// are looking for in the memory when initializing ACPI. It includes
 /// a pointer to XSDT
 #[repr(packed)]
-#[derive(Clone, Copy, Debug, Default, AsBytes)]
+#[derive(Clone, Copy, Default, AsBytes)]
 pub struct Rsdp {
     _signature: [u8; 8],
     checksum: u8,
@@ -21,6 +23,29 @@ pub struct Rsdp {
     _xsdt_addr: U64,
     extended_checksum: u8,
     _reserved: [u8; 3],
+}
+
+impl fmt::Debug for Rsdp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "_signature: {:#?}\n",
+            str::from_utf8(&self._signature).unwrap()
+        )?;
+        write!(f, "checksum: {:#?}\n", self.checksum)?;
+        write!(
+            f,
+            "_oem_id: {:#?}\n",
+            str::from_utf8(&self._oem_id).unwrap()
+        )?;
+        write!(f, "_revision: {:#?}\n", self._revision)?;
+        write!(f, "_rsdt_addr: {:#?}\n", self._rsdt_addr)?;
+        write!(f, "_length: {:#?}\n", self._length)?;
+        write!(f, "_xsdt_addr: {:#?}\n", self._xsdt_addr)?;
+        write!(f, "extended_checksum: {:#?}\n", {})?;
+        write!(f, "_reserved: {:#?}\n", {})?;
+        Ok(())
+    }
 }
 
 impl Rsdp {

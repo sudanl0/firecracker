@@ -17,6 +17,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use vm_allocator::AllocPolicy;
 
+use super::resources::ResourceAllocator;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::DeviceInfoForFDT;
 use crate::arch::DeviceType;
@@ -35,8 +36,6 @@ use crate::devices::virtio::{TYPE_BALLOON, TYPE_BLOCK, TYPE_NET, TYPE_RNG};
 use crate::devices::BusDevice;
 #[cfg(target_arch = "x86_64")]
 use crate::vstate::memory::GuestAddress;
-
-use super::resources::ResourceAllocator;
 
 /// Errors for MMIO device manager.
 #[derive(Debug, thiserror::Error, displaydoc::Display)]

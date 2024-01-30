@@ -1,24 +1,35 @@
 use std::rc::Rc;
 
+use acpi_tables::fadt::{FADT_F_HW_REDUCED_ACPI, FADT_F_PWR_BUTTON, FADT_F_SLP_BUTTON};
+use acpi_tables::{
+    aml, AddressSpace, Aml, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt,
+};
+use log::debug;
+use vm_allocator::AllocPolicy;
+
+use crate::arch;
+use crate::device_manager::resources::ResourceAllocator;
+#[cfg(target_arch = "aarch64")]
+use crate::{
+    device_manager::mmio::MMIODeviceManager,
+    vstate::memory::{GuestAddress, GuestMemoryMmap},
+    Vcpu,
+};
+#[cfg(target_arch = "x86_64")]
 use crate::{
     device_manager::{legacy::PortIODeviceManager, mmio::MMIODeviceManager},
     vstate::memory::{GuestAddress, GuestMemoryMmap},
     Vcpu,
 };
-use acpi_tables::{
-    aml,
-    fadt::{FADT_F_HW_REDUCED_ACPI, FADT_F_PWR_BUTTON, FADT_F_SLP_BUTTON},
-    Aml,
-};
-use acpi_tables::{AddressSpace, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt};
-use log::debug;
-use vm_allocator::AllocPolicy;
-
-use crate::{arch, device_manager::resources::ResourceAllocator};
 
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
 
+#[cfg(target_arch = "aarch64")]
+mod aarch64;
+
+#[cfg(target_arch = "aarch64")]
+use aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use x86_64::*;
 
@@ -32,8 +43,8 @@ const OEM_ID: [u8; 6] = *b"FIRECK";
 // of the particular ACPI table. For our purpose, we can set it to a fixed value for all the tables
 const OEM_REVISION: u32 = 0;
 
-// This is needed for an entry in the FADT table. Populating this entry in FADT is a way to let the guest
-// know that it runs within a Firecracker microVM.
+// This is needed for an entry in the FADT table. Populating this entry in FADT is a way to let the
+// guest know that it runs within a Firecracker microVM.
 const HYPERVISOR_VENDOR_ID: [u8; 8] = *b"FIRECKVM";
 
 #[derive(Debug, thiserror::Error, displaydoc::Display)]
@@ -83,7 +94,7 @@ impl AcpiManager {
         mem: &GuestMemoryMmap,
         vcpus: &[Vcpu],
         mmio: &MMIODeviceManager,
-        pio: &PortIODeviceManager,
+        #[cfg(target_arch = "x86_64")] pio: &PortIODeviceManager,
     ) -> Result<u64, AcpiManagerError> {
         debug!("acpi: building DSDT table");
         let mut dsdt_data = Vec::new();
@@ -101,6 +112,7 @@ impl AcpiManager {
         // Virtio-devices DSDT data
         mmio.append_aml_bytes(&mut dsdt_data);
 
+        #[cfg(target_arch = "x86_64")]
         // Legacy-IO devices DSDT data
         pio.append_aml_bytes(&mut dsdt_data);
 
@@ -124,7 +136,7 @@ impl AcpiManager {
             *b"FCVMFADT",
             OEM_REVISION,
             dsdt_addr,
-            9, //TODO: properly maintain this
+            9, // TODO: properly maintain this
             x_pm1a_evt_blk,
             x_pm1a_cnt_blk,
             HYPERVISOR_VENDOR_ID,
@@ -152,9 +164,12 @@ impl AcpiManager {
         mem: &GuestMemoryMmap,
         vcpus: &[Vcpu],
         mmio: &MMIODeviceManager,
-        pio: &PortIODeviceManager,
+        #[cfg(target_arch = "x86_64")] pio: &PortIODeviceManager,
     ) -> Result<(), AcpiManagerError> {
+        #[cfg(target_arch = "x86_64")]
         let dsdt_addr = self.build_dsdt(mem, vcpus, mmio, pio)?;
+        #[cfg(target_arch = "aarch64")]
+        let dsdt_addr = self.build_dsdt(mem, vcpus, mmio)?;
         let fadt_addr = self.build_fadt(mem, dsdt_addr)?;
         let madt_addr = self.build_madt(mem, vcpus)?;
 

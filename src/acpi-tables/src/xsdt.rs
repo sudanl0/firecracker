@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem::size_of;
 
 use vm_memory::{Address, Bytes, GuestAddress, GuestMemory};
@@ -5,10 +6,18 @@ use zerocopy::AsBytes;
 
 use crate::{checksum, AcpiError, Result, Sdt, SdtHeader};
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default)]
 pub struct Xsdt {
     header: SdtHeader,
     tables: Vec<u8>,
+}
+
+impl fmt::Debug for Xsdt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "header : {:#?}\n", self.header)?;
+        write!(f, "tables : {:#?}\n", ())?;
+        Ok(())
+    }
 }
 
 impl Xsdt {

@@ -1,3 +1,5 @@
+use std::{fmt, str};
+
 use vm_memory::{GuestAddress, GuestMemory, GuestMemoryError};
 
 pub mod aml;
@@ -13,10 +15,8 @@ pub use fadt::Fadt;
 pub use madt::Madt;
 pub use rsdp::Rsdp;
 pub use xsdt::Xsdt;
-use zerocopy::{
-    little_endian::{U32, U64},
-    AsBytes,
-};
+use zerocopy::little_endian::{U32, U64};
+use zerocopy::AsBytes;
 
 // This is the creator ID that we will embed in ACPI tables that are created using this crate.
 const FC_ACPI_CREATOR_ID: [u8; 4] = *b"FCAT";
@@ -110,7 +110,7 @@ impl GenericAddressStructure {
 
 /// Header included in all System Descriptor Tables
 #[repr(packed)]
-#[derive(Clone, Debug, Copy, Default, AsBytes)]
+#[derive(Clone, Copy, Default, AsBytes)]
 pub struct SdtHeader {
     pub signature: [u8; 4],
     pub length: U32,
@@ -121,6 +121,33 @@ pub struct SdtHeader {
     pub oem_revision: U32,
     pub creator_id: [u8; 4],
     pub creator_revison: U32,
+}
+
+impl fmt::Debug for SdtHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "signature : {:#?}\n",
+            str::from_utf8(&self.signature).unwrap()
+        )?;
+        write!(f, "length : {:#?}\n", self.length)?;
+        write!(f, "revision : {:#?}\n", self.revision)?;
+        write!(f, "checksum : {:#?}\n", self.checksum)?;
+        write!(f, "oem_id : {:#?}\n", str::from_utf8(&self.oem_id).unwrap())?;
+        write!(
+            f,
+            "oem_table_id : {:#?}\n",
+            str::from_utf8(&self.oem_table_id).unwrap()
+        )?;
+        write!(f, "oem_revision : {:#?}\n", self.oem_revision)?;
+        write!(
+            f,
+            "creator_id : {:#?}\n",
+            str::from_utf8(&self.creator_id).unwrap()
+        )?;
+        write!(f, "creator_revison : {:#?}\n", self.creator_revison)?;
+        Ok(())
+    }
 }
 
 impl SdtHeader {

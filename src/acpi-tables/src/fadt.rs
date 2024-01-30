@@ -120,25 +120,25 @@ impl Fadt {
             ..Default::default()
         }
 
-        /*
-        fadt.pm1_evt_len = ACPI_PM1_EVT_LEN;
-        fadt.pm1_cnt_len = ACPI_PM1_CNT_LEN;
-        fadt.fadt_minor_version = FADT_MINOR_VERSION;
+        // fadt.pm1_evt_len = ACPI_PM1_EVT_LEN;
+        // fadt.pm1_cnt_len = ACPI_PM1_CNT_LEN;
+        // fadt.fadt_minor_version = FADT_MINOR_VERSION;
         // Disable FACP table
-        fadt.flags = U32::new(1) << F_HARDWARE_REDUCED_ACPI;
-        fadt.x_dsdt = x_dsdt_addr.into();
+        // fadt.flags = U32::new(1) << F_HARDWARE_REDUCED_ACPI;
+        // fadt.x_dsdt = x_dsdt_addr.into();
         // Disable probing for VGA, enabling MSI and PCI ASPM Controls,
         // maybe we can speed-up a bit booting
-        fadt.iapc_boot_arch = U16::new(1) << IAPC_BOOT_ARG_FLAGS_VGA_NOT_PRESENT
-            | U16::new(1) << IAPC_BOOT_ARG_FLAGS_MSI_NOT_PRESENT
-            | U16::new(1) << IAPC_BOOT_ARG_FLAGS_PCI_ASPM;
-
-        let mut acpi_register_offset = ACPI_REGISTERS_BASE_ADDRESS;
-        fadt.x_pm1a_evt_blk = GenericAddressStructure::io_port_address::<u32>(acpi_register_offset);
-
-        acpi_register_offset += ACPI_PM1_EVT_LEN as u16;
-        fadt.x_pm1a_cnt_blk = GenericAddressStructure::io_port_address::<u16>(acpi_register_offset);
-        */
+        // fadt.iapc_boot_arch = U16::new(1) << IAPC_BOOT_ARG_FLAGS_VGA_NOT_PRESENT
+        // | U16::new(1) << IAPC_BOOT_ARG_FLAGS_MSI_NOT_PRESENT
+        // | U16::new(1) << IAPC_BOOT_ARG_FLAGS_PCI_ASPM;
+        //
+        // let mut acpi_register_offset = ACPI_REGISTERS_BASE_ADDRESS;
+        // fadt.x_pm1a_evt_blk =
+        // GenericAddressStructure::io_port_address::<u32>(acpi_register_offset);
+        //
+        // acpi_register_offset += ACPI_PM1_EVT_LEN as u16;
+        // fadt.x_pm1a_cnt_blk =
+        // GenericAddressStructure::io_port_address::<u16>(acpi_register_offset);
     }
 
     pub fn set_flags(&mut self, flags: u32) {

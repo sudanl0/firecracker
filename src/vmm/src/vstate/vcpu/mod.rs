@@ -13,11 +13,11 @@ use std::sync::Mutex;
 use std::sync::{Arc, Barrier};
 use std::{fmt, io, thread};
 
-use acpi_tables::aml;
+#[cfg(target_arch = "x86_64")]
 use acpi_tables::madt::LocalAPIC;
-use acpi_tables::Aml;
+use acpi_tables::{aml, Aml};
+#[cfg(target_arch = "x86_64")]
 use zerocopy::AsBytes;
-
 use kvm_bindings::{KVM_SYSTEM_EVENT_RESET, KVM_SYSTEM_EVENT_SHUTDOWN};
 use kvm_ioctls::VcpuExit;
 use libc::{c_int, c_void, siginfo_t};
@@ -559,11 +559,14 @@ impl Vcpu {
     fn generate_acpi_mat(&self) -> Vec<u8> {
         LocalAPIC::new(self.kvm_vcpu.index).as_bytes().into()
     }
+    #[cfg(target_arch = "aarch64")]
+    fn generate_acpi_mat(&self) -> Vec<u8> {
+        Vec::new()
+    }
 }
 
 impl Aml for Vcpu {
     fn append_aml_bytes(&self, bytes: &mut Vec<u8>) {
-        #[cfg(target_arch = "x86_64")]
         let mat_data: Vec<u8> = self.generate_acpi_mat();
         aml::Device::new(
             format!("C{:03}", self.kvm_vcpu.index).as_str().into(),

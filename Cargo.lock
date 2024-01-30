@@ -7,6 +7,7 @@ name = "acpi_tables"
 version = "0.1.0"
 dependencies = [
  "displaydoc",
+ "log",
  "thiserror",
  "vm-memory 0.13.1",
  "zerocopy",
