@@ -109,13 +109,14 @@ impl AcpiManager {
         }
         aml::Device::new("_SB_.CPUS".into(), cpu_inner_data).append_aml_bytes(&mut dsdt_data);
 
-        // Virtio-devices DSDT data
+        // Virtio-devices DSDT data (also adds serial for aarch64)
         mmio.append_aml_bytes(&mut dsdt_data);
 
         #[cfg(target_arch = "x86_64")]
         // Legacy-IO devices DSDT data
         pio.append_aml_bytes(&mut dsdt_data);
 
+        // Can add cpu hotplug and memory hotplug in the future
         let mut dsdt = Dsdt::new(OEM_ID, *b"FCVMDSDT", OEM_REVISION, dsdt_data);
         self.write_acpi_table(mem, &mut dsdt)
     }
