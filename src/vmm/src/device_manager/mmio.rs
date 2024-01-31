@@ -462,6 +462,33 @@ impl Aml for MMIODeviceManager {
                 Ok(())
             },
         );
+
+        #[cfg(target_arch = "aarch64")]
+        if let Some(device_info) = self
+            .id_to_dev_info
+            .get(&(DeviceType::Serial, DeviceType::Serial.to_string()))
+        {
+            aml::Device::new(
+                "_SB_.COM1".into(),
+                vec![
+                    &aml::Name::new("_HID".into(), &"ARMH0011"),
+                    &aml::Name::new("_UID".into(), &aml::ZERO),
+                    &aml::Name::new("_DDN".into(), &"COM1"),
+                    &aml::Name::new(
+                        "_CRS".into(),
+                        &aml::ResourceTemplate::new(vec![
+                            &aml::Interrupt::new(true, true, false, false, device_info.irqs[0]),
+                            &aml::Memory32Fixed::new(
+                                true,
+                                device_info.addr.try_into().unwrap(),
+                                device_info.len.try_into().unwrap(),
+                            ),
+                        ]),
+                    ),
+                ],
+            )
+            .append_aml_bytes(v);
+        }
     }
 }
 
