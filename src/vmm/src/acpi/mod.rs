@@ -5,7 +5,9 @@ use acpi_tables::{
     aml, AddressSpace, Aml, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt,
 };
 #[cfg(target_arch = "aarch64")]
-use acpi_tables::{ Pptt,};
+use acpi_tables::{ Gtdt, Pptt,};
+#[cfg(target_arch = "aarch64")]
+use linux_loader::cmdline::Cmdline as LoaderKernelCmdline;
 use log::debug;
 use vm_allocator::AllocPolicy;
 
@@ -68,7 +70,7 @@ impl AcpiManager {
     pub(crate) fn new(resource_allocator: Rc<ResourceAllocator>) -> Result<Self, AcpiManagerError> {
         Ok(Self {
             resource_allocator,
-            rsdp_addr: GuestAddress(0x000e_0000),
+            rsdp_addr: GuestAddress(arch::ACPI_RSDP),
         })
     }
 
@@ -120,6 +122,7 @@ impl AcpiManager {
 
         // Can add cpu hotplug and memory hotplug in the future
         let mut dsdt = Dsdt::new(OEM_ID, *b"FCVMDSDT", OEM_REVISION, dsdt_data);
+        debug!("{:#x?}", dsdt);
         self.write_acpi_table(mem, &mut dsdt)
     }
 
@@ -148,6 +151,7 @@ impl AcpiManager {
             1 << FADT_F_HW_REDUCED_ACPI | 1 << FADT_F_PWR_BUTTON | 1 << FADT_F_SLP_BUTTON,
         );
         setup_arch_fadt(&mut fadt);
+        debug!("{:#x?}", fadt);
         self.write_acpi_table(mem, &mut fadt)
     }
 
@@ -165,6 +169,7 @@ impl AcpiManager {
         // pass vcpus to extract nr_cpus and mpidr
         #[cfg(target_arch = "aarch64")]
         setup_interrupt_controllers(&mut madt, vcpus, gic);
+        debug!("{:#x?}", madt);
 
         self.write_acpi_table(mem, &mut madt)
     }
@@ -183,6 +188,13 @@ impl AcpiManager {
         );
         debug!("{:#x?}", pptt);
         self.write_acpi_table(mem, &mut pptt)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn build_gtdt(&mut self, mem: &GuestMemoryMmap) -> Result<u64, AcpiManagerError> {
+        let mut gtdt = Gtdt::new(OEM_ID, *b"FCVMGTDT", OEM_REVISION);
+        debug!("{:#x?}", gtdt);
+        self.write_acpi_table(mem, &mut gtdt)
     }
 
     pub(crate) fn create_acpi_tables(
@@ -207,6 +219,8 @@ impl AcpiManager {
 
         #[cfg(target_arch = "aarch64")]
         let pptt_addr = self.build_pptt(mem, vcpus)?;
+        #[cfg(target_arch = "aarch64")]
+        let gtdt_addr = self.build_gtdt(mem)?;
 
         // SPCR is useful when earlycon= is used with no options
         // When used with no options, the early console is
@@ -218,13 +232,20 @@ impl AcpiManager {
             OEM_ID,
             *b"FCMVXSDT",
             OEM_REVISION,
-            vec![fadt_addr, madt_addr, #[cfg(target_arch = "aarch64")] pptt_addr],
+            vec![fadt_addr, madt_addr, #[cfg(target_arch = "aarch64")] pptt_addr, #[cfg(target_arch = "aarch64")] gtdt_addr],
         );
+        debug!("{:#x?}", xsdt);
         let xsdt_addr = self.write_acpi_table(mem, &mut xsdt)?;
 
         let mut rsdp = Rsdp::new(OEM_ID, xsdt_addr);
+        debug!("{:#x?}", rsdp);
+        debug!(
+            "\nfadt_addr:{:#x?},\n madt_addr:{:#x?},\n \
+             xsdt_addr:{:#x?},\n self.rsdp_addr:{:#x?}\n",
+            fadt_addr, madt_addr, xsdt_addr, self.rsdp_addr
+        );
         #[cfg(target_arch = "aarch64")]
-        debug!("pptt_addr:{:#x?},\n", pptt_addr);
+        debug!("pptt_addr:{:#x?},\n gtdt_addr:{:#x?}\n", pptt_addr, gtdt_addr);
         rsdp.write_to_guest(mem, self.rsdp_addr)?;
 
         Ok(())

@@ -5,6 +5,7 @@ use vm_memory::{GuestAddress, GuestMemory, GuestMemoryError};
 pub mod aml;
 pub mod dsdt;
 pub mod fadt;
+pub mod gtdt;
 pub mod madt;
 #[cfg(target_arch = "aarch64")]
 pub mod pptt;
@@ -14,6 +15,7 @@ pub mod xsdt;
 pub use aml::Aml;
 pub use dsdt::Dsdt;
 pub use fadt::Fadt;
+pub use gtdt::Gtdt;
 pub use madt::Madt;
 #[cfg(target_arch = "aarch64")]
 pub use pptt::Pptt;
