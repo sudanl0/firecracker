@@ -1,3 +1,5 @@
+use std::fmt;
+
 use vm_memory::{Bytes, GuestAddress, GuestMemory};
 use zerocopy::little_endian::{U16, U32, U64};
 use zerocopy::AsBytes;
@@ -24,7 +26,7 @@ pub const FADT_F_SLP_BUTTON: u8 = 5;
 pub const FADT_F_HW_REDUCED_ACPI: u8 = 20;
 
 #[repr(packed)]
-#[derive(Debug, Copy, Clone, Default, AsBytes)]
+#[derive(Copy, Clone, Default, AsBytes)]
 pub struct Fadt {
     pub header: SdtHeader,
     pub firmware_control: U32,
@@ -84,6 +86,15 @@ pub struct Fadt {
     pub hypervisor_vendor_id: [u8; 8],
 }
 
+impl fmt::Debug for Fadt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "header : {:#?}\n", self.header)?;
+        write!(f, "dsdt : {:#?}\n", self.dsdt)?;
+        write!(f, "x_dsdt : {:#?}\n", self.x_dsdt)?;
+        Ok(())
+    }
+}
+
 impl Fadt {
     pub fn new(
         oem_id: [u8; 6],
@@ -117,6 +128,8 @@ impl Fadt {
             x_pm1a_cnt_blk,
             pm1_evt_len: x_pm1a_evt_blk.register_bit_width / 8,
             pm1_cnt_len: x_pm1a_cnt_blk.register_bit_width / 8,
+            #[cfg(target_arch = "aarch64")]
+            arm_boot_arch: U16::new(3),
             ..Default::default()
         }
 
