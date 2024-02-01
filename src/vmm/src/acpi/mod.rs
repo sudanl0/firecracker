@@ -4,6 +4,8 @@ use acpi_tables::fadt::{FADT_F_HW_REDUCED_ACPI, FADT_F_PWR_BUTTON, FADT_F_SLP_BU
 use acpi_tables::{
     aml, AddressSpace, Aml, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt,
 };
+#[cfg(target_arch = "aarch64")]
+use acpi_tables::{ Pptt,};
 use log::debug;
 use vm_allocator::AllocPolicy;
 
@@ -167,6 +169,22 @@ impl AcpiManager {
         self.write_acpi_table(mem, &mut madt)
     }
 
+    #[cfg(target_arch = "aarch64")]
+    fn build_pptt(
+        &mut self,
+        mem: &GuestMemoryMmap,
+        vcpus: &[Vcpu],
+    ) -> Result<u64, AcpiManagerError> {
+        let mut pptt = Pptt::new(
+            OEM_ID,
+            *b"FCVMPPTT",
+            OEM_REVISION,
+            vcpus.len().try_into().unwrap(),
+        );
+        debug!("{:#x?}", pptt);
+        self.write_acpi_table(mem, &mut pptt)
+    }
+
     pub(crate) fn create_acpi_tables(
         &mut self,
         mem: &GuestMemoryMmap,
@@ -187,15 +205,26 @@ impl AcpiManager {
             gic,
         )?;
 
+        #[cfg(target_arch = "aarch64")]
+        let pptt_addr = self.build_pptt(mem, vcpus)?;
+
+        // SPCR is useful when earlycon= is used with no options
+        // When used with no options, the early console is
+        // 	determined by stdout-path property in device tree's
+        // 	chosen node or the ACPI SPCR table if supported by
+        // 	the platform.
+
         let mut xsdt = Xsdt::new(
             OEM_ID,
             *b"FCMVXSDT",
             OEM_REVISION,
-            vec![fadt_addr, madt_addr],
+            vec![fadt_addr, madt_addr, #[cfg(target_arch = "aarch64")] pptt_addr],
         );
         let xsdt_addr = self.write_acpi_table(mem, &mut xsdt)?;
 
         let mut rsdp = Rsdp::new(OEM_ID, xsdt_addr);
+        #[cfg(target_arch = "aarch64")]
+        debug!("pptt_addr:{:#x?},\n", pptt_addr);
         rsdp.write_to_guest(mem, self.rsdp_addr)?;
 
         Ok(())
