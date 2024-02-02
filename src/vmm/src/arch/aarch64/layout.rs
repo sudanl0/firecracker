@@ -75,9 +75,11 @@ pub const IRQ_BASE: u32 = 32;
 /// Below this address will reside the GIC, above this address will reside the MMIO devices.
 pub const MAPPED_IO_START: u64 = 1 << 30; // 1 GB
 
-/// Start of memory region we will use for ACPI data. We are putting them
-/// at the beginning of High Memory.
-pub const ACPI_MEM_START: u64 = DRAM_MEM_START;
+/// ACPI tables are stored at start of DRAM after the FDT
+pub const ACPI_MEM_START: u64 = DRAM_MEM_START + FDT_MAX_SIZE as u64;
+
+/// same as acpi mem start
+pub const ACPI_RSDP: u64 = ACPI_MEM_START;
 
 /// Size of memory region for ACPI data (1KB of memory at the moment).
 pub const ACPI_MEM_SIZE: u64 = 4096;
