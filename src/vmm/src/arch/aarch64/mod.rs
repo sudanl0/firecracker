@@ -29,6 +29,8 @@ pub enum ConfigurationError {
     SetupFDT(#[from] fdt::FdtError),
     /// Failed to compute the initrd address.
     InitrdAddress,
+    /// Failed to compute the ACPI address.
+    AcpiAddress,
 }
 
 /// The start of the memory area reserved for MMIO devices.
@@ -75,7 +77,13 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::Build
 
 /// Returns the memory address where the kernel could be loaded.
 pub fn get_kernel_start() -> u64 {
-    layout::DRAM_MEM_START
+    // layout::DRAM_MEM_START
+    get_acpi_rsdp().checked_add(layout::ACPI_MEM_SIZE).unwrap()
+}
+
+/// Returns the memory address where the ACPI tables could be loaded.
+pub fn get_acpi_rsdp() -> u64 {
+    layout::ACPI_RSDP
 }
 
 /// Returns the memory address where the initrd could be loaded.

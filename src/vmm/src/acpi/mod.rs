@@ -5,7 +5,7 @@ use acpi_tables::{
     aml, AddressSpace, Aml, Dsdt, Fadt, GenericAddressStructure, Madt, Rsdp, Sdt, Xsdt,
 };
 #[cfg(target_arch = "aarch64")]
-use acpi_tables::{ Gtdt, Pptt,};
+use acpi_tables::{Gtdt, Pptt};
 #[cfg(target_arch = "aarch64")]
 use linux_loader::cmdline::Cmdline as LoaderKernelCmdline;
 use log::debug;
@@ -70,7 +70,7 @@ impl AcpiManager {
     pub(crate) fn new(resource_allocator: Rc<ResourceAllocator>) -> Result<Self, AcpiManagerError> {
         Ok(Self {
             resource_allocator,
-            rsdp_addr: GuestAddress(arch::ACPI_RSDP),
+            rsdp_addr: GuestAddress(arch::get_acpi_rsdp()),
         })
     }
 
@@ -232,7 +232,14 @@ impl AcpiManager {
             OEM_ID,
             *b"FCMVXSDT",
             OEM_REVISION,
-            vec![fadt_addr, madt_addr, #[cfg(target_arch = "aarch64")] pptt_addr, #[cfg(target_arch = "aarch64")] gtdt_addr],
+            vec![
+                fadt_addr,
+                madt_addr,
+                #[cfg(target_arch = "aarch64")]
+                pptt_addr,
+                #[cfg(target_arch = "aarch64")]
+                gtdt_addr,
+            ],
         );
         debug!("{:#x?}", xsdt);
         let xsdt_addr = self.write_acpi_table(mem, &mut xsdt)?;
@@ -240,12 +247,14 @@ impl AcpiManager {
         let mut rsdp = Rsdp::new(OEM_ID, xsdt_addr);
         debug!("{:#x?}", rsdp);
         debug!(
-            "\nfadt_addr:{:#x?},\n madt_addr:{:#x?},\n \
-             xsdt_addr:{:#x?},\n self.rsdp_addr:{:#x?}\n",
+            "\nfadt_addr:{:#x?},\n madt_addr:{:#x?},\n xsdt_addr:{:#x?},\n self.rsdp_addr:{:#x?}\n",
             fadt_addr, madt_addr, xsdt_addr, self.rsdp_addr
         );
         #[cfg(target_arch = "aarch64")]
-        debug!("pptt_addr:{:#x?},\n gtdt_addr:{:#x?}\n", pptt_addr, gtdt_addr);
+        debug!(
+            "pptt_addr:{:#x?},\n gtdt_addr:{:#x?}\n",
+            pptt_addr, gtdt_addr
+        );
         rsdp.write_to_guest(mem, self.rsdp_addr)?;
 
         Ok(())

@@ -16,8 +16,6 @@ use std::{fmt, io, thread};
 #[cfg(target_arch = "x86_64")]
 use acpi_tables::madt::LocalAPIC;
 use acpi_tables::{aml, Aml};
-#[cfg(target_arch = "x86_64")]
-use zerocopy::AsBytes;
 use kvm_bindings::{KVM_SYSTEM_EVENT_RESET, KVM_SYSTEM_EVENT_SHUTDOWN};
 use kvm_ioctls::VcpuExit;
 use libc::{c_int, c_void, siginfo_t};
@@ -27,6 +25,8 @@ use utils::errno;
 use utils::eventfd::EventFd;
 use utils::signal::{register_signal_handler, sigrtmin, Killable};
 use utils::sm::StateMachine;
+#[cfg(target_arch = "x86_64")]
+use zerocopy::AsBytes;
 
 use crate::cpu_config::templates::{CpuConfiguration, GuestConfigError};
 use crate::logger::{IncMetric, METRICS};

@@ -83,6 +83,11 @@ pub fn get_kernel_start() -> u64 {
     layout::HIMEM_START
 }
 
+/// Returns the memory address where the ACPI tables could be loaded.
+pub fn get_acpi_rsdp() -> u64 {
+    layout::ACPI_RSDP
+}
+
 /// Returns the memory address where the initrd could be loaded.
 pub fn initrd_load_addr(
     guest_mem: &GuestMemoryMmap,

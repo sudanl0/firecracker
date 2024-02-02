@@ -49,6 +49,9 @@
 //
 // Taken from (http://infocenter.arm.com/help/topic/com.arm.doc.den0001c/DEN0001C_principles_of_arm_memory_maps.pdf).
 
+/// The maximum UEFI size.
+pub const UEFI_IMAGE_MAX_SIZE: u64 = 0x40_0000; // 4MB.
+
 /// Start of RAM on 64 bit ARM.
 pub const DRAM_MEM_START: u64 = 0x8000_0000; // 2 GB.
 /// The maximum RAM size.
@@ -75,12 +78,15 @@ pub const IRQ_BASE: u32 = 32;
 /// Below this address will reside the GIC, above this address will reside the MMIO devices.
 pub const MAPPED_IO_START: u64 = 1 << 30; // 1 GB
 
-/// Start of memory region we will use for ACPI data. We are putting them
-/// at the beginning of High Memory.
+/// ACPI tables are stored at start of DRAM after the FDT
 pub const ACPI_MEM_START: u64 = DRAM_MEM_START;
 
-/// Size of memory region for ACPI data (1KB of memory at the moment).
-pub const ACPI_MEM_SIZE: u64 = 4096;
+/// same as acpi mem start
+pub const ACPI_RSDP: u64 = ACPI_MEM_START;
+
+/// Size of memory region for ACPI data.
+pub const ACPI_MEM_SIZE: u64 = 20_0000; // need just 4096 but keep 2MB to align
+                                        // kernel address to 2MB address boundary
 
 /// APIC address
 pub const APIC_ADDR: u32 = 0;
