@@ -789,12 +789,14 @@ pub fn configure_system_for_boot(
             .map(|cpu| cpu.kvm_vcpu.get_mpidr())
             .collect();
 
+        let mut boot_cmdline = boot_cmdline.clone();
         // Create ACPI tables and write them in guest memory
         vmm.acpi_manager.create_acpi_tables(
             &vmm.guest_memory,
             vcpus,
             &vmm.mmio_device_manager,
             vmm.vm.get_irqchip(),
+            &mut boot_cmdline,
         )?;
 
         let cmdline = boot_cmdline.as_cstring()?;
