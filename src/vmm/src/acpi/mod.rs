@@ -204,6 +204,7 @@ impl AcpiManager {
         mmio: &MMIODeviceManager,
         #[cfg(target_arch = "x86_64")] pio: &PortIODeviceManager,
         #[cfg(target_arch = "aarch64")] gic: &arch::aarch64::gic::GICDevice,
+        #[cfg(target_arch = "aarch64")] cmdline: &mut LoaderKernelCmdline,
     ) -> Result<(), AcpiManagerError> {
         #[cfg(target_arch = "x86_64")]
         let dsdt_addr = self.build_dsdt(mem, vcpus, mmio, pio)?;
@@ -256,6 +257,12 @@ impl AcpiManager {
             pptt_addr, gtdt_addr
         );
         rsdp.write_to_guest(mem, self.rsdp_addr)?;
+        #[cfg(target_arch = "aarch64")]
+        let acpi_cmdline = format!("acpi=force acpi_rsdp={:#x?}", self.rsdp_addr.0);
+        #[cfg(target_arch = "aarch64")]
+        cmdline
+            .insert_str(acpi_cmdline)
+            .expect("inserting acpi rsdp to cmdline failed");
 
         Ok(())
     }
