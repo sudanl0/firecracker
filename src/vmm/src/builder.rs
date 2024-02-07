@@ -7,6 +7,7 @@
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::io::{self, Seek, SeekFrom};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use event_manager::{MutEventSubscriber, SubscriberOps};
@@ -27,6 +28,7 @@ use vm_memory::ReadVolatile;
 use vm_superio::Rtc;
 use vm_superio::Serial;
 
+use crate::acpi::{AcpiManager, AcpiManagerError};
 use crate::arch::InitrdConfig;
 #[cfg(target_arch = "aarch64")]
 use crate::construct_kvm_mpidrs;
@@ -38,6 +40,7 @@ use crate::cpu_config::templates::{
 use crate::device_manager::legacy::PortIODeviceManager;
 use crate::device_manager::mmio::MMIODeviceManager;
 use crate::device_manager::persist::MMIODevManagerConstructorArgs;
+use crate::device_manager::resources::ResourceAllocator;
 use crate::devices::legacy::serial::SerialOut;
 #[cfg(target_arch = "aarch64")]
 use crate::devices::legacy::RTCDevice;
@@ -105,13 +108,17 @@ pub enum StartMicrovmError {
     /// Cannot open the block device backing file: {0}
     OpenBlockDevice(io::Error),
     /// Cannot initialize a MMIO Device or add a device to the MMIO Bus or cmdline: {0}
-    RegisterMmioDevice(device_manager::mmio::MmioError),
+    RegisterMmioDevice(#[from] device_manager::mmio::MmioError),
     /// Cannot restore microvm state: {0}
     RestoreMicrovmState(MicrovmStateError),
     /// Cannot set vm resources: {0}
     SetVmResources(VmConfigError),
     /// Cannot create the entropy device: {0}
     CreateEntropyDevice(crate::devices::virtio::rng::EntropyError),
+    /// Failed to allocate guest resource: {0}
+    AllocateResources(#[from] vm_allocator::Error),
+    /// Error configuring ACPI: {0}
+    Acpi(#[from] AcpiManagerError),
 }
 
 /// It's convenient to automatically convert `linux_loader::cmdline::Error`s
@@ -147,15 +154,12 @@ fn create_vmm_and_vcpus(
         .map_err(VmmError::EventFd)
         .map_err(Internal)?;
 
+    let resource_allocator = Rc::new(ResourceAllocator::new()?);
+
     // Instantiate the MMIO device manager.
     // 'mmio_base' address has to be an address which is protected by the kernel
     // and is architectural specific.
-    let mmio_device_manager = MMIODeviceManager::new(
-        crate::arch::MMIO_MEM_START,
-        crate::arch::MMIO_MEM_SIZE,
-        (crate::arch::IRQ_BASE, crate::arch::IRQ_MAX),
-    )
-    .map_err(StartMicrovmError::RegisterMmioDevice)?;
+    let mmio_device_manager = MMIODeviceManager::new(resource_allocator.clone())?;
 
     // For x86_64 we need to create the interrupt controller before calling `KVM_CREATE_VCPUS`
     // while on aarch64 we need to do it the other way around.
@@ -199,6 +203,8 @@ fn create_vmm_and_vcpus(
         vcpus
     };
 
+    let acpi_manager = AcpiManager::new(resource_allocator.clone())?;
+
     let vmm = Vmm {
         events_observer: Some(std::io::stdin()),
         instance_info: instance_info.clone(),
@@ -208,9 +214,11 @@ fn create_vmm_and_vcpus(
         uffd,
         vcpus_handles: Vec::new(),
         vcpus_exit_evt,
+        resource_allocator,
         mmio_device_manager,
         #[cfg(target_arch = "x86_64")]
         pio_device_manager,
+        acpi_manager,
     };
 
     Ok((vmm, vcpus))
@@ -294,7 +302,7 @@ pub fn build_microvm_for_boot(
     attach_legacy_devices_aarch64(event_manager, &mut vmm, &mut boot_cmdline).map_err(Internal)?;
 
     configure_system_for_boot(
-        &vmm,
+        &mut vmm,
         vcpus.as_mut(),
         &vm_resources.vm_config,
         &cpu_template,
@@ -467,6 +475,7 @@ pub fn build_microvm_from_snapshot(
         mem: guest_memory,
         vm: vmm.vm.fd(),
         event_manager,
+        resource_allocator: vmm.resource_allocator.clone(),
         for_each_restored_device: VmResources::update_from_restored_device,
         vm_resources,
         instance_id: &instance_info.id,
@@ -680,7 +689,7 @@ fn create_vcpus(vm: &Vm, vcpu_count: u8, exit_evt: &EventFd) -> Result<Vec<Vcpu>
 /// Configures the system for booting Linux.
 #[cfg_attr(target_arch = "aarch64", allow(unused))]
 pub fn configure_system_for_boot(
-    vmm: &Vmm,
+    vmm: &mut Vmm,
     vcpus: &mut [Vcpu],
     vm_config: &VmConfig,
     cpu_template: &CustomCpuTemplate,
@@ -739,6 +748,9 @@ pub fn configure_system_for_boot(
             .map_err(Internal)?;
     }
 
+    // Also pass ACPI-related info via the command line
+    // vmm.acpi_manager.setup_kernel_cmdline(&mut boot_cmdline)?;
+
     #[cfg(target_arch = "x86_64")]
     {
         // Write the kernel command line to guest memory. This is x86_64 specific, since on
@@ -758,16 +770,35 @@ pub fn configure_system_for_boot(
             crate::vstate::memory::GuestAddress(crate::arch::x86_64::layout::CMDLINE_START),
             cmdline_size,
             initrd,
-            vcpu_config.vcpu_count,
         )
         .map_err(ConfigureSystem)?;
+
+        // Create ACPI tables and write them in guest memory
+        vmm.acpi_manager.create_acpi_tables(
+            &vmm.guest_memory,
+            vcpus,
+            &vmm.mmio_device_manager,
+            &vmm.pio_device_manager,
+        )?;
     }
+
     #[cfg(target_arch = "aarch64")]
     {
         let vcpu_mpidr = vcpus
             .iter_mut()
             .map(|cpu| cpu.kvm_vcpu.get_mpidr())
             .collect();
+
+        let mut boot_cmdline = boot_cmdline.clone();
+        // Create ACPI tables and write them in guest memory
+        vmm.acpi_manager.create_acpi_tables(
+            &vmm.guest_memory,
+            vcpus,
+            &vmm.mmio_device_manager,
+            vmm.vm.get_irqchip(),
+            &mut boot_cmdline,
+        )?;
+
         let cmdline = boot_cmdline.as_cstring()?;
         crate::arch::aarch64::configure_system(
             &vmm.guest_memory,
@@ -779,6 +810,7 @@ pub fn configure_system_for_boot(
         )
         .map_err(ConfigureSystem)?;
     }
+
     Ok(())
 }
 
@@ -947,7 +979,9 @@ pub mod tests {
     use utils::tempfile::TempFile;
 
     use super::*;
+    use crate::acpi::AcpiManager;
     use crate::arch::DeviceType;
+    use crate::device_manager::resources::ResourceAllocator;
     use crate::devices::virtio::block_common::CacheType;
     use crate::devices::virtio::rng::device::ENTROPY_DEV_ID;
     use crate::devices::virtio::vsock::{TYPE_VSOCK, VSOCK_DEV_ID};
@@ -991,12 +1025,11 @@ pub mod tests {
     }
 
     fn default_mmio_device_manager() -> MMIODeviceManager {
-        MMIODeviceManager::new(
-            crate::arch::MMIO_MEM_START,
-            crate::arch::MMIO_MEM_SIZE,
-            (crate::arch::IRQ_BASE, crate::arch::IRQ_MAX),
-        )
-        .unwrap()
+        MMIODeviceManager::new(Rc::new(ResourceAllocator::new().unwrap())).unwrap()
+    }
+
+    fn default_acpi_manager() -> AcpiManager {
+        AcpiManager::new(Rc::new(ResourceAllocator::new().unwrap())).unwrap()
     }
 
     fn cmdline_contains(cmdline: &Cmdline, slug: &str) -> bool {
@@ -1051,6 +1084,7 @@ pub mod tests {
             EventFd::new(libc::EFD_NONBLOCK).unwrap(),
         )
         .unwrap();
+        let acpi_manager = default_acpi_manager();
 
         #[cfg(target_arch = "x86_64")]
         setup_interrupt_controller(&mut vm).unwrap();
@@ -1071,9 +1105,11 @@ pub mod tests {
             uffd: None,
             vcpus_handles: Vec::new(),
             vcpus_exit_evt,
+            resource_allocator: Rc::new(ResourceAllocator::new().unwrap()),
             mmio_device_manager,
             #[cfg(target_arch = "x86_64")]
             pio_device_manager,
+            acpi_manager,
         }
     }
 

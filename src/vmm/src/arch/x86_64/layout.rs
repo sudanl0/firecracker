@@ -29,3 +29,19 @@ pub const KVM_TSS_ADDRESS: u64 = 0xfffb_d000;
 
 /// The 'zero page', a.k.a linux kernel bootparams.
 pub const ZERO_PAGE_START: u64 = 0x7000;
+
+/// APIC address
+pub const APIC_ADDR: u32 = 0xfee0_0000;
+
+/// IOAPIC address
+pub const IOAPIC_ADDR: u32 = 0xfec0_0000;
+
+/// Start of memory region we will use for ACPI data. We are putting them
+/// at the beginning of High Memory.
+pub const ACPI_MEM_START: u64 = HIMEM_START;
+
+/// Size of memory region for ACPI data (1KB of memory at the moment).
+pub const ACPI_MEM_SIZE: u64 = 4096;
+
+/// This looks like ACPI_MEM_START - 128KB but why this address?
+pub const ACPI_RSDP: u64 = 0x000e_0000;

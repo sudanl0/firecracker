@@ -12,12 +12,12 @@ mod gdt;
 pub mod interrupts;
 /// Layout for the x86_64 system.
 pub mod layout;
-mod mptable;
 /// Logic for configuring x86_64 model specific registers (MSRs).
 pub mod msr;
 /// Logic for configuring x86_64 registers.
 pub mod regs;
 
+use layout::{ACPI_MEM_SIZE, ACPI_MEM_START};
 use linux_loader::configurator::linux::LinuxBootConfigurator;
 use linux_loader::configurator::{BootConfigurator, BootParams};
 use linux_loader::loader::bootparam::boot_params;
@@ -39,8 +39,6 @@ const E820_RESERVED: u32 = 2;
 pub enum ConfigurationError {
     /// Invalid e820 setup params.
     E820Configuration,
-    /// Error writing MP table to memory: {0}
-    MpTableSetup(#[from] mptable::MptableError),
     /// Error writing the zero page of guest memory.
     ZeroPageSetup,
     /// Failed to compute initrd address.
@@ -50,10 +48,11 @@ pub enum ConfigurationError {
 // EBDA is located in the last 1 KiB of the first 640KiB of memory, i.e in the range:
 // [0x9FC00, 0x9FFFF]
 // We mark first [0x0, EBDA_START] region as usable RAM
-// and [EBDA_START, (EBDA_START + EBDA_SIZE)] as reserved.
+// and [EBDA_START, (EBDA_START + EBDA_SIZE)] as reserved
 const EBDA_START: u64 = 0x9fc00;
 const EBDA_SIZE: u64 = 1 << 10;
 const FIRST_ADDR_PAST_32BITS: u64 = 1 << 32;
+
 /// Size of MMIO gap at top of 32-bit address space.
 pub const MEM_32BIT_GAP_SIZE: u64 = 768 << 20;
 /// The start of the memory area reserved for MMIO devices.
@@ -116,7 +115,6 @@ pub fn configure_system(
     cmdline_addr: GuestAddress,
     cmdline_size: usize,
     initrd: &Option<InitrdConfig>,
-    num_cpus: u8,
 ) -> Result<(), ConfigurationError> {
     const KERNEL_BOOT_FLAG_MAGIC: u16 = 0xaa55;
     const KERNEL_HDR_MAGIC: u32 = 0x5372_6448;
@@ -126,9 +124,6 @@ pub fn configure_system(
     let end_32bit_gap_start = GuestAddress(MMIO_MEM_START);
 
     let himem_start = GuestAddress(layout::HIMEM_START);
-
-    // Note that this puts the mptable at the last 1k of Linux's 640k base RAM
-    mptable::setup_mptable(guest_mem, num_cpus)?;
 
     let mut params = boot_params::default();
 
@@ -145,6 +140,7 @@ pub fn configure_system(
 
     add_e820_entry(&mut params, 0, EBDA_START, E820_RAM)?;
     add_e820_entry(&mut params, EBDA_START, EBDA_SIZE, E820_RESERVED)?;
+    add_e820_entry(&mut params, ACPI_MEM_START, ACPI_MEM_SIZE, E820_RESERVED)?;
 
     let last_addr = guest_mem.last_addr();
     if last_addr < end_32bit_gap_start {
@@ -230,28 +226,23 @@ mod tests {
 
     #[test]
     fn test_system_configuration() {
-        let no_vcpus = 4;
-        let gm = single_region_mem(0x10000);
-        let config_err = configure_system(&gm, GuestAddress(0), 0, &None, 1);
-        assert_eq!(
-            config_err.unwrap_err(),
-            super::ConfigurationError::MpTableSetup(mptable::MptableError::NotEnoughMemory)
-        );
-
         // Now assigning some memory that falls before the 32bit memory hole.
         let mem_size = 128 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
 
         // Now assigning some memory that is equal to the start of the 32bit memory hole.
         let mem_size = 3328 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
 
         // Now assigning some memory that falls after the 32bit memory hole.
         let mem_size = 3330 << 20;
-        let gm = arch_mem(mem_size);
-        configure_system(&gm, GuestAddress(0), 0, &None, no_vcpus).unwrap();
+        let arch_mem_regions = arch_memory_regions(mem_size);
+        let gm = GuestMemoryMmap::from_raw_regions(&arch_mem_regions, false).unwrap();
+        configure_system(&gm, GuestAddress(0), 0, &None).unwrap();
     }
 
     #[test]

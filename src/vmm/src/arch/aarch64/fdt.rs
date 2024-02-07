@@ -64,6 +64,7 @@ pub enum FdtError {
 }
 
 /// Creates the flattened device tree for this aarch64 microVM.
+#[allow(dead_code, unused_variables)]
 pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher>(
     guest_mem: &GuestMemoryMmap,
     vcpu_mpidr: Vec<u64>,
@@ -88,14 +89,14 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher
     fdt_writer.property_u32("#size-cells", SIZE_CELLS)?;
     // This is not mandatory but we use it to point the root node to the node
     // containing description of the interrupt controller for this VM.
-    fdt_writer.property_u32("interrupt-parent", GIC_PHANDLE)?;
-    create_cpu_nodes(&mut fdt_writer, &vcpu_mpidr)?;
+    // fdt_writer.property_u32("interrupt-parent", GIC_PHANDLE)?;
+    // create_cpu_nodes(&mut fdt_writer, &vcpu_mpidr)?;
     create_memory_node(&mut fdt_writer, guest_mem)?;
     create_chosen_node(&mut fdt_writer, cmdline, initrd)?;
-    create_gic_node(&mut fdt_writer, gic_device)?;
-    create_timer_node(&mut fdt_writer)?;
+    // create_gic_node(&mut fdt_writer, gic_device)?;
+    // create_timer_node(&mut fdt_writer)?;
     create_clock_node(&mut fdt_writer)?;
-    create_psci_node(&mut fdt_writer)?;
+    // create_psci_node(&mut fdt_writer)?;
     create_devices_node(&mut fdt_writer, device_info)?;
 
     // End Header node.
@@ -111,6 +112,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher
 }
 
 // Following are the auxiliary function for creating the different nodes that we append to our FDT.
+#[allow(dead_code)]
 fn create_cpu_nodes(fdt: &mut FdtWriter, vcpu_mpidr: &[u64]) -> Result<(), FdtError> {
     // Since the L1 caches are not shareable among CPUs and they are direct attributes of the
     // cpu in the device tree, we process the L1 and non-L1 caches separately.
@@ -258,6 +260,7 @@ fn create_chosen_node(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_gic_node(fdt: &mut FdtWriter, gic_device: &GICDevice) -> Result<(), FdtError> {
     let interrupt = fdt.begin_node("intc")?;
     fdt.property_string("compatible", gic_device.fdt_compatibility())?;
@@ -284,6 +287,7 @@ fn create_gic_node(fdt: &mut FdtWriter, gic_device: &GICDevice) -> Result<(), Fd
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_clock_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     // The Advanced Peripheral Bus (APB) is part of the Advanced Microcontroller Bus Architecture
     // (AMBA) protocol family. It defines a low-cost interface that is optimized for minimal power
@@ -299,6 +303,7 @@ fn create_clock_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_timer_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     // See
     // https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/interrupt-controller/arch_timer.txt
@@ -321,6 +326,7 @@ fn create_timer_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_psci_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     let compatible = "arm,psci-0.2";
 
@@ -335,6 +341,7 @@ fn create_psci_node(fdt: &mut FdtWriter) -> Result<(), FdtError> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_virtio_node<T: DeviceInfoForFDT + Clone + Debug>(
     fdt: &mut FdtWriter,
     dev_info: &T,
@@ -353,6 +360,7 @@ fn create_virtio_node<T: DeviceInfoForFDT + Clone + Debug>(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_serial_node<T: DeviceInfoForFDT + Clone + Debug>(
     fdt: &mut FdtWriter,
     dev_info: &T,
@@ -372,6 +380,7 @@ fn create_serial_node<T: DeviceInfoForFDT + Clone + Debug>(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_rtc_node<T: DeviceInfoForFDT + Clone + Debug>(
     fdt: &mut FdtWriter,
     dev_info: &T,
@@ -392,6 +401,7 @@ fn create_rtc_node<T: DeviceInfoForFDT + Clone + Debug>(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn create_devices_node<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher>(
     fdt: &mut FdtWriter,
     dev_info: &HashMap<(DeviceType, String), T, S>,

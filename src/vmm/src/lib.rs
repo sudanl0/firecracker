@@ -73,6 +73,8 @@ pub mod io_uring;
 /// needs to be called by the user on every event on the rate limiter's `AsRawFd` FD.
 pub mod rate_limiter;
 
+/// Module for handling ACPI tables
+pub mod acpi;
 /// Handles setup and initialization a `Vmm` object.
 pub mod builder;
 /// Types for guest configuration.
@@ -109,10 +111,13 @@ pub mod vstate;
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::io::AsRawFd;
+use std::rc::Rc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 
+use acpi::AcpiManager;
+use device_manager::resources::ResourceAllocator;
 use devices::virtio::vhost_user_block::device::VhostUserBlock;
 use event_manager::{EventManager as BaseEventManager, EventOps, Events, MutEventSubscriber};
 use seccompiler::BpfProgram;
@@ -308,10 +313,14 @@ pub struct Vmm {
     // Used by Vcpus and devices to initiate teardown; Vmm should never write here.
     vcpus_exit_evt: EventFd,
 
+    // Allocator for guest resrouces
+    resource_allocator: Rc<ResourceAllocator>,
     // Guest VM devices.
     mmio_device_manager: MMIODeviceManager,
     #[cfg(target_arch = "x86_64")]
     pio_device_manager: PortIODeviceManager,
+    /// ACPI manager
+    acpi_manager: AcpiManager,
 }
 
 impl Vmm {
