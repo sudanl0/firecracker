@@ -255,6 +255,17 @@ class Microvm:
                 LOG.exception("Process not found: %d", self.firecracker_pid)
             except FileNotFoundError:
                 LOG.exception("PID file not found")
+
+            # if microvm was spawned then check if it gets killed
+            if self._spawned:
+                # filter ps results for the jailer's unique id
+                rc, stdout, stderr = utils.run_cmd(
+                    f"ps aux | grep {self.jailer.jailer_id}"
+                )
+                # make sure firecracker was killed
+                assert (
+                    rc == 0 and stderr == "" and stdout.find("firecracker") == -1
+                ), "Firecracker was not killed as expected"
         else:
             # Killing screen will send SIGHUP to underlying Firecracker.
             # Needed to avoid false positives in case kill() is called again.
