@@ -258,6 +258,8 @@ class Microvm:
 
             # if microvm was spawned then check if it gets killed
             if self._spawned:
+                # it is observed that killing pid sometimes take more time
+                time.sleep(1)
                 # filter ps results for the jailer's unique id
                 rc, stdout, stderr = utils.run_cmd(
                     f"ps aux | grep {self.jailer.jailer_id}"
@@ -265,7 +267,7 @@ class Microvm:
                 # make sure firecracker was killed
                 assert (
                     rc == 0 and stderr == "" and stdout.find("firecracker") == -1
-                ), "Firecracker was not killed as expected"
+                ), f"Firecracker pid {self.firecracker_pid} was not killed as expected"
         else:
             # Killing screen will send SIGHUP to underlying Firecracker.
             # Needed to avoid false positives in case kill() is called again.
