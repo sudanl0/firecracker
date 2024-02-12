@@ -25,6 +25,7 @@ use crate::arch::aarch64::gic::GICDevice;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::gic::GicState;
 use crate::cpu_config::templates::KvmCapability;
+use crate::logger::error;
 use crate::vstate::memory::{Address, GuestMemory, GuestMemoryMmap, GuestMemoryRegion};
 
 /// Errors associated with the wrappers over KVM ioctls.
@@ -216,6 +217,7 @@ impl Vm {
             return Err(VmError::NotEnoughMemorySlots);
         }
         self.set_kvm_memory_regions(guest_mem, track_dirty_pages)?;
+        error!("guest_mem : {:#x?}", guest_mem);
         #[cfg(target_arch = "x86_64")]
         self.fd
             .set_tss_address(u64_to_usize(crate::arch::x86_64::layout::KVM_TSS_ADDRESS))
@@ -245,6 +247,7 @@ impl Vm {
                     userspace_addr: guest_mem.get_host_address(region.start_addr()).unwrap() as u64,
                     flags,
                 };
+                error!("memory_region : {:#x?}", memory_region);
 
                 // SAFETY: Safe because the fd is a valid KVM file descriptor.
                 unsafe { self.fd.set_user_memory_region(memory_region) }

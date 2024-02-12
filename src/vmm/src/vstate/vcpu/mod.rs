@@ -183,7 +183,7 @@ impl Vcpu {
             // only reading `vcpu.fd` which does not change for the lifetime of the `Vcpu`.
             unsafe {
                 let _ = Vcpu::run_on_thread_local(|vcpu| {
-                    vcpu.kvm_vcpu.fd.set_kvm_immediate_exit(1);
+                    // vcpu.kvm_vcpu.fd.set_kvm_immediate_exit(1);
                     fence(Ordering::Release);
                 });
             }
@@ -273,29 +273,46 @@ impl Vcpu {
     fn running(&mut self) -> StateMachine<Self> {
         // This loop is here just for optimizing the emulation path.
         // No point in ticking the state machine if there are no external events.
+        error!("Running emulation");
         loop {
+            error!("Started loop");
             match self.run_emulation() {
                 // Emulation ran successfully, continue.
-                Ok(VcpuEmulation::Handled) => (),
+                Ok(VcpuEmulation::Handled) => {
+                    error!("VcpuEmulation::Handled");
+                    ()
+                }
                 // Emulation was interrupted, check external events.
-                Ok(VcpuEmulation::Interrupted) => break,
+                Ok(VcpuEmulation::Interrupted) => {
+                    error!("VcpuEmulation::Interrupted");
+                    break;
+                }
                 // If the guest was rebooted or halted:
                 // - vCPU0 will always exit out of `KVM_RUN` with KVM_EXIT_SHUTDOWN or KVM_EXIT_HLT.
                 // - the other vCPUs won't ever exit out of `KVM_RUN`, but they won't consume CPU.
                 // So we pause vCPU0 and send a signal to the emulation thread to stop the VMM.
-                Ok(VcpuEmulation::Stopped) => return self.exit(FcExitCode::Ok),
+                Ok(VcpuEmulation::Stopped) => {
+                    error!("VcpuEmulation::Stopped");
+                    return self.exit(FcExitCode::Ok);
+                }
                 // Emulation errors lead to vCPU exit.
-                Err(_) => return self.exit(FcExitCode::GenericError),
+                Err(_) => {
+                    error!("FcExitCode::GenericError");
+                    return self.exit(FcExitCode::GenericError);
+                }
             }
         }
+        error!("Out of loop");
 
         // By default don't change state.
         let mut state = StateMachine::next(Self::running);
 
         // Break this emulation loop on any transition request/external event.
+        error!("event_receiver.try_recv()");
         match self.event_receiver.try_recv() {
             // Running ---- Pause ----> Paused
             Ok(VcpuEvent::Pause) => {
+                error!("VcpuEvent::Pause");
                 // Nothing special to do.
                 self.response_sender
                     .send(VcpuResponse::Paused)
@@ -308,12 +325,14 @@ impl Vcpu {
                 state = StateMachine::next(Self::paused);
             }
             Ok(VcpuEvent::Resume) => {
+                error!("VcpuEvent::Resume");
                 self.response_sender
                     .send(VcpuResponse::Resumed)
                     .expect("vcpu channel unexpectedly closed");
             }
             // SaveState cannot be performed on a running Vcpu.
             Ok(VcpuEvent::SaveState) => {
+                error!("VcpuEvent::SaveState");
                 self.response_sender
                     .send(VcpuResponse::NotAllowed(String::from(
                         "save/restore unavailable while running",
@@ -322,20 +341,29 @@ impl Vcpu {
             }
             // DumpCpuConfig cannot be performed on a running Vcpu.
             Ok(VcpuEvent::DumpCpuConfig) => {
+                error!("VcpuEvent::DumpCpuConfig");
                 self.response_sender
                     .send(VcpuResponse::NotAllowed(String::from(
                         "cpu config dump is unavailable while running",
                     )))
                     .expect("vcpu channel unexpectedly closed");
             }
-            Ok(VcpuEvent::Finish) => return StateMachine::finish(),
+            Ok(VcpuEvent::Finish) => {
+                error!("VcpuEvent::Finish");
+                return StateMachine::finish();
+            }
             // Unhandled exit of the other end.
             Err(TryRecvError::Disconnected) => {
+                error!("TryRecvError::Disconnected");
                 // Move to 'exited' state.
                 state = self.exit(FcExitCode::GenericError);
             }
             // All other events or lack thereof have no effect on current 'running' state.
-            Err(TryRecvError::Empty) => (),
+            Err(TryRecvError::Empty) => {
+                error!("TryRecvError::Empty");
+                // ()
+                // state = self.exit(FcExitCode::GenericError);
+            }
         }
 
         state
@@ -451,10 +479,13 @@ impl Vcpu {
     ///
     /// Returns error or enum specifying whether emulation was handled or interrupted.
     pub fn run_emulation(&self) -> Result<VcpuEmulation, VcpuError> {
+        error!("In run_emulation");
         match self.emulate() {
             Ok(run) => match run {
                 VcpuExit::MmioRead(addr, data) => {
+                    error!("Received an MMIO Read Request");
                     if let Some(mmio_bus) = &self.kvm_vcpu.mmio_bus {
+                        error!("for the address {:#x}.", addr);
                         let _metric = METRICS.vcpu.exit_mmio_read_agg.record_latency_metrics();
                         mmio_bus.read(addr, data);
                         METRICS.vcpu.exit_mmio_read.inc();
@@ -462,7 +493,9 @@ impl Vcpu {
                     Ok(VcpuEmulation::Handled)
                 }
                 VcpuExit::MmioWrite(addr, data) => {
+                    error!("Received an MMIO Write Request");
                     if let Some(mmio_bus) = &self.kvm_vcpu.mmio_bus {
+                        error!("for the address {:#x}.", addr);
                         let _metric = METRICS.vcpu.exit_mmio_write_agg.record_latency_metrics();
                         mmio_bus.write(addr, data);
                         METRICS.vcpu.exit_mmio_write.inc();
@@ -470,11 +503,11 @@ impl Vcpu {
                     Ok(VcpuEmulation::Handled)
                 }
                 VcpuExit::Hlt => {
-                    info!("Received KVM_EXIT_HLT signal");
+                    error!("Received KVM_EXIT_HLT signal");
                     Ok(VcpuEmulation::Stopped)
                 }
                 VcpuExit::Shutdown => {
-                    info!("Received KVM_EXIT_SHUTDOWN signal");
+                    error!("Received KVM_EXIT_SHUTDOWN signal");
                     Ok(VcpuEmulation::Stopped)
                 }
                 // Documentation specifies that below kvm exits are considered
@@ -487,7 +520,7 @@ impl Vcpu {
                         hardware_entry_failure_reason, cpu
                     );
                     Err(VcpuError::FaultyKvmExit(format!(
-                        "{:?}",
+                        "Faulty KVM exit{:?}",
                         VcpuExit::FailEntry(hardware_entry_failure_reason, cpu)
                     )))
                 }
@@ -502,7 +535,7 @@ impl Vcpu {
                 }
                 VcpuExit::SystemEvent(event_type, event_flags) => match event_type {
                     KVM_SYSTEM_EVENT_RESET | KVM_SYSTEM_EVENT_SHUTDOWN => {
-                        info!(
+                        error!(
                             "Received KVM_SYSTEM_EVENT: type: {}, event: {:?}",
                             event_type, event_flags
                         );
@@ -528,9 +561,11 @@ impl Vcpu {
             // The unwrap on raw_os_error can only fail if we have a logic
             // error in our code in which case it is better to panic.
             Err(ref err) => {
+                error!("KVM err : {:#?}", err);
                 match err.errno() {
                     libc::EAGAIN => Ok(VcpuEmulation::Handled),
                     libc::EINTR => {
+                        error!("KVM was interrupted");
                         self.kvm_vcpu.fd.set_kvm_immediate_exit(0);
                         // Notify that this KVM_RUN was interrupted.
                         Ok(VcpuEmulation::Interrupted)

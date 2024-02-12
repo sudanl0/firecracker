@@ -31,6 +31,8 @@ pub struct BootSourceConfig {
     /// The boot arguments to pass to the kernel. If this field is uninitialized,
     /// DEFAULT_KERNEL_CMDLINE is used.
     pub boot_args: Option<String>,
+    /// Path of the uefi image.
+    pub uefi_image_path: Option<String>,
 }
 
 /// Errors associated with actions on `BootSourceConfig`.
@@ -42,6 +44,8 @@ pub enum BootSourceConfigError {
     InvalidInitrdPath(io::Error),
     /// The kernel command line is invalid: {0}
     InvalidKernelCommandLine(String),
+    /// The UEFI file cannot be opened: {0}
+    InvalidUefiPath(io::Error),
 }
 
 /// Holds the kernel specification (both configuration as well as runtime details).
@@ -63,19 +67,25 @@ pub struct BootConfig {
     pub kernel_file: File,
     /// The descriptor to the initrd file, if there is one.
     pub initrd_file: Option<File>,
+    /// The descriptor to the uefi file.
+    pub uefi_file: Option<File>,
 }
 
 impl BootConfig {
     /// Creates the BootConfig based on a given configuration.
     pub fn new(cfg: &BootSourceConfig) -> Result<Self, BootSourceConfigError> {
         use self::BootSourceConfigError::{
-            InvalidInitrdPath, InvalidKernelCommandLine, InvalidKernelPath,
+            InvalidInitrdPath, InvalidKernelCommandLine, InvalidKernelPath, InvalidUefiPath,
         };
 
         // Validate boot source config.
         let kernel_file = File::open(&cfg.kernel_image_path).map_err(InvalidKernelPath)?;
         let initrd_file: Option<File> = match &cfg.initrd_path {
             Some(path) => Some(File::open(path).map_err(InvalidInitrdPath)?),
+            None => None,
+        };
+        let uefi_file: Option<File> = match &cfg.uefi_image_path {
+            Some(path) => Some(File::open(path).map_err(InvalidUefiPath)?),
             None => None,
         };
 
@@ -91,6 +101,7 @@ impl BootConfig {
             cmdline,
             kernel_file,
             initrd_file,
+            uefi_file,
         })
     }
 }

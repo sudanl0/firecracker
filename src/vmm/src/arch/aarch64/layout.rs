@@ -57,6 +57,11 @@ pub const DRAM_MEM_START: u64 = 0x8000_0000; // 2 GB.
 /// The maximum RAM size.
 pub const DRAM_MEM_MAX_SIZE: usize = 0x00FF_8000_0000; // 1024 - 2 = 1022G.
 
+/// UEFI START
+pub const UEFI_MEM_START: u64 = DRAM_MEM_START as u64;
+/// The maximum UEFI size.
+pub const UEFI_IMAGE_MAX_SIZE: u64 = 0x40_0000; // 4MB.
+
 /// Kernel command line maximum size.
 /// As per `arch/arm64/include/uapi/asm/setup.h`.
 pub const CMDLINE_MAX_SIZE: usize = 2048;
@@ -79,13 +84,13 @@ pub const IRQ_BASE: u32 = 32;
 pub const MAPPED_IO_START: u64 = 1 << 30; // 1 GB
 
 /// ACPI tables are stored at start of DRAM after the FDT
-pub const ACPI_MEM_START: u64 = DRAM_MEM_START;
+pub const ACPI_MEM_START: u64 = UEFI_MEM_START + UEFI_IMAGE_MAX_SIZE as u64;
 
 /// same as acpi mem start
 pub const ACPI_RSDP: u64 = ACPI_MEM_START;
 
 /// Size of memory region for ACPI data.
-pub const ACPI_MEM_SIZE: u64 = 20_0000; // need just 4096 but keep 2MB to align
+pub const ACPI_MEM_SIZE: u64 = 0x20_0000; // need just 4096 but keep 2MB to align
                                         // kernel address to 2MB address boundary
 
 /// APIC address

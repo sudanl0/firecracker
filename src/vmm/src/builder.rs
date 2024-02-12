@@ -119,6 +119,14 @@ pub enum StartMicrovmError {
     AllocateResources(#[from] vm_allocator::Error),
     /// Error configuring ACPI: {0}
     Acpi(#[from] AcpiManagerError),
+    /// Error in Seek for UEFI image failed
+    UefiSeek,
+    /// Cannot load uefi due to an invalid image: {0}
+    UefiRead(io::Error),
+    /// Loading UEFI image failed
+    UefiLoad,
+    /// Uefi image path was not provide in config
+    UefiInvalidConfig,
 }
 
 /// It's convenient to automatically convert `linux_loader::cmdline::Error`s
@@ -248,7 +256,14 @@ pub fn build_microvm_for_boot(
     let guest_memory =
         GuestMemoryMmap::memfd_backed(vm_resources.vm_config.mem_size_mib, track_dirty_pages)
             .map_err(StartMicrovmError::GuestMemory)?;
-    let entry_addr = load_kernel(boot_config, &guest_memory)?;
+
+    let kernel_entry_addr = load_kernel(boot_config, &guest_memory)?;
+    let entry_addr = GuestAddress(load_uefi(boot_config, &guest_memory)?);
+    error!(
+        "kernel_entry_addr:{:#x?} uefi_entry_addr:{:#x?}",
+        kernel_entry_addr, entry_addr
+    );
+
     let initrd = load_initrd_from_config(boot_config, &guest_memory)?;
     // Clone the command-line so that a failed boot doesn't pollute the original.
     #[allow(unused_mut)]
@@ -326,13 +341,13 @@ pub fn build_microvm_for_boot(
     // Execution panics if filters cannot be loaded, use --no-seccomp if skipping filters
     // altogether is the desired behaviour.
     // Keep this as the last step before resuming vcpus.
-    seccompiler::apply_filter(
-        seccomp_filters
-            .get("vmm")
-            .ok_or_else(|| MissingSeccompFilters("vmm".to_string()))?,
-    )
-    .map_err(VmmError::SeccompFilters)
-    .map_err(Internal)?;
+    // seccompiler::apply_filter(
+    //     seccomp_filters
+    //         .get("vmm")
+    //         .ok_or_else(|| MissingSeccompFilters("vmm".to_string()))?,
+    // )
+    // .map_err(VmmError::SeccompFilters)
+    // .map_err(Internal)?;
 
     let vmm = Arc::new(Mutex::new(vmm));
     event_manager.add_subscriber(vmm.clone());
@@ -540,6 +555,38 @@ fn load_kernel(
     Ok(entry_addr.kernel_load)
 }
 
+fn load_uefi(
+    boot_config: &BootConfig,
+    guest_memory: &GuestMemoryMmap,
+) -> Result<GuestAddress, StartMicrovmError> {
+    use std::os::fd::AsFd;
+    let uefi_load_address = crate::arch::get_uefi_start();
+
+    debug!("Starting to load UEFI");
+    match &boot_config.uefi_file {
+        Some(uefi_file) => {
+            let mut uefi_file = uefi_file;
+            let uefi_size = uefi_file
+                .seek(SeekFrom::End(0))
+                .map_err(|_| StartMicrovmError::UefiSeek)? as usize;
+
+            uefi_file
+                .rewind()
+                .map_err(|_| StartMicrovmError::UefiSeek)?;
+            guest_memory
+                .read_exact_volatile_from(
+                    vm_memory::GuestAddress(uefi_load_address),
+                    &mut uefi_file.as_fd(),
+                    uefi_size,
+                )
+                .map_err(|_| StartMicrovmError::UefiLoad)?;
+            debug!("Done loading UEFI to {:#x?}", uefi_load_address);
+            Ok(vm_memory::GuestAddress(uefi_load_address))
+        }
+        None => Err(StartMicrovmError::UefiInvalidConfig),
+    }
+}
+
 fn load_initrd_from_config(
     boot_cfg: &BootConfig,
     vm_memory: &GuestMemoryMmap,
@@ -686,6 +733,58 @@ fn create_vcpus(vm: &Vm, vcpu_count: u8, exit_evt: &EventFd) -> Result<Vec<Vcpu>
     Ok(vcpus)
 }
 
+fn dump_memory(guest_mem: &GuestMemoryMmap, address: u64, size: usize) {
+    let addr: *mut u8 = guest_mem.get_host_address(GuestAddress(address)).unwrap();
+    error!("====addr: {:#x?} ", addr);
+    unsafe {
+        for i in 0..0x10 {
+            error!("{:#x?}", *addr.wrapping_add(i));
+        }
+    }
+}
+
+fn load_uefi(boot_cfg: &BootConfig, guest_mem: &GuestMemoryMmap) -> Result<u64, StartMicrovmError> {
+    use vm_memory::Bytes;
+
+    use self::StartMicrovmError::{InitrdLoad, UefiRead};
+    let uefi_file = match &boot_cfg.uefi_file {
+        Some(f) => f,
+        None => return Err(StartMicrovmError::UefiInvalidConfig),
+    };
+
+    let mut image = uefi_file.try_clone().map_err(UefiRead)?;
+    let uefi_load_address = crate::arch::get_uefi_start(&guest_mem);
+
+    let size: usize;
+    // Get the image size
+    match image.seek(SeekFrom::End(0)) {
+        Err(err) => return Err(UefiRead(err)),
+        Ok(0) => {
+            return Err(UefiRead(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Initrd image seek returned a size of zero",
+            )))
+        }
+        Ok(s) => size = u64_to_usize(s),
+    };
+
+    // Go back to the image start
+    image.seek(SeekFrom::Start(0)).map_err(UefiRead)?;
+
+    let mut slice = guest_mem
+        .get_slice(GuestAddress(uefi_load_address), size)
+        .map_err(|_| InitrdLoad)?;
+
+    image
+        .read_exact_volatile(&mut slice)
+        .map_err(|_| InitrdLoad)?;
+
+    dump_memory(guest_mem, crate::arch::get_kernel_start(), size);
+    dump_memory(guest_mem, uefi_load_address, size);
+
+    Ok(uefi_load_address)
+}
+
 /// Configures the system for booting Linux.
 #[cfg_attr(target_arch = "aarch64", allow(unused))]
 pub fn configure_system_for_boot(
@@ -789,17 +888,18 @@ pub fn configure_system_for_boot(
             .map(|cpu| cpu.kvm_vcpu.get_mpidr())
             .collect();
 
-        let mut boot_cmdline = boot_cmdline.clone();
-        // Create ACPI tables and write them in guest memory
-        vmm.acpi_manager.create_acpi_tables(
-            &vmm.guest_memory,
-            vcpus,
-            &vmm.mmio_device_manager,
-            vmm.vm.get_irqchip(),
-            &mut boot_cmdline,
-        )?;
+        // let mut boot_cmdline = boot_cmdline.clone();
+        // // Create ACPI tables and write them in guest memory
+        // vmm.acpi_manager.create_acpi_tables(
+        //     &vmm.guest_memory,
+        //     vcpus,
+        //     &vmm.mmio_device_manager,
+        //     vmm.vm.get_irqchip(),
+        //     &mut boot_cmdline,
+        // )?;
 
         let cmdline = boot_cmdline.as_cstring()?;
+        // error!("{:#x?}", vmm.guest_memory);
         crate::arch::aarch64::configure_system(
             &vmm.guest_memory,
             cmdline,
@@ -1095,7 +1195,7 @@ pub mod tests {
             let _vcpu = Vcpu::new(1, &vm, exit_evt).unwrap();
             setup_interrupt_controller(&mut vm, 1).unwrap();
         }
-
+        error!("Created default_vmm");
         Vmm {
             events_observer: Some(std::io::stdin()),
             instance_info: InstanceInfo::default(),

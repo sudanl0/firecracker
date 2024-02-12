@@ -20,6 +20,7 @@ use std::fmt::Debug;
 pub use self::fdt::DeviceInfoForFDT;
 use self::gic::GICDevice;
 use crate::arch::DeviceType;
+use crate::logger::debug;
 use crate::vstate::memory::{Address, GuestAddress, GuestMemory, GuestMemoryMmap};
 
 /// Errors thrown while configuring aarch64 system.
@@ -75,9 +76,19 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::Build
     Ok(())
 }
 
+/// Returns the memory address where the UEFI could be loaded.
+pub fn get_uefi_start(mem: &GuestMemoryMmap) -> u64 {
+    debug!("returning UEFI address as {:#x?}", layout::UEFI_MEM_START);
+    layout::UEFI_MEM_START
+}
+
 /// Returns the memory address where the kernel could be loaded.
 pub fn get_kernel_start() -> u64 {
     // layout::DRAM_MEM_START
+    debug!(
+        "returning kernel address as {:#x?}",
+        layout::ACPI_MEM_START + layout::ACPI_MEM_SIZE
+    );
     get_acpi_rsdp().checked_add(layout::ACPI_MEM_SIZE).unwrap()
 }
 
@@ -112,10 +123,12 @@ fn get_fdt_addr(mem: &GuestMemoryMmap) -> u64 {
 
     if let Some(addr) = mem.last_addr().checked_sub(layout::FDT_MAX_SIZE as u64 - 1) {
         if mem.address_in_range(addr) {
+            debug!("Done loading FDT to {:#x?} - {:#x?}", addr, mem.last_addr());
             return addr.raw_value();
         }
     }
 
+    debug!("Done loading FDT to {:#x?}", layout::DRAM_MEM_START);
     layout::DRAM_MEM_START
 }
 
