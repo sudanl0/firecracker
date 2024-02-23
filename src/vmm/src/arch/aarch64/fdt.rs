@@ -17,6 +17,7 @@ use super::cache_info::{read_cache_config, CacheEntry};
 use super::get_fdt_addr;
 use super::gic::GICDevice;
 use crate::vstate::memory::{Address, Bytes, GuestAddress, GuestMemory, GuestMemoryMmap};
+use crate::devices::acpi::vmgenid::VmGenId;
 
 // This is a value for uniquely identifying the FDT node declaring the interrupt controller.
 const GIC_PHANDLE: u32 = 1;
@@ -70,6 +71,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher
     cmdline: CString,
     device_info: &HashMap<(DeviceType, String), T, S>,
     gic_device: &GICDevice,
+    vmgenid: &Option<VmGenId>,
     initrd: &Option<InitrdConfig>,
 ) -> Result<Vec<u8>, FdtError> {
     // Allocate stuff necessary for storing the blob.
@@ -97,6 +99,7 @@ pub fn create_fdt<T: DeviceInfoForFDT + Clone + Debug, S: std::hash::BuildHasher
     create_clock_node(&mut fdt_writer)?;
     create_psci_node(&mut fdt_writer)?;
     create_devices_node(&mut fdt_writer, device_info)?;
+    create_vmgenid_node(&mut fdt_writer, vmgenid)?;
 
     // End Header node.
     fdt_writer.end_node(root)?;
@@ -219,12 +222,22 @@ fn create_cpu_nodes(fdt: &mut FdtWriter, vcpu_mpidr: &[u64]) -> Result<(), FdtEr
 }
 
 fn create_memory_node(fdt: &mut FdtWriter, guest_mem: &GuestMemoryMmap) -> Result<(), FdtError> {
-    let mem_size = guest_mem.last_addr().raw_value() - super::layout::DRAM_MEM_START + 1;
+    let mem_size = guest_mem.last_addr().raw_value() - super::layout::DRAM_MEM_START - super::layout::SYSTEM_MEM_SIZE + 1;
     // See https://github.com/torvalds/linux/blob/master/Documentation/devicetree/booting-without-of.txt#L960
     // for an explanation of this.
-    let mem_reg_prop = &[super::layout::DRAM_MEM_START, mem_size];
 
-    let mem = fdt.begin_node("memory")?;
+    // On ARM we reserve ACPI memory so that it can be utilized for devices like VMGenID
+    // to send data to kernel modules.
+    // Linux does not allow remapping of system memory however,
+    // without remap, kernel module cannot get virtual addresses to read data from ACPI region.
+    // Reserving a memory region allows Linux kernel modules to remap
+    // and thus read this region.
+    let mem = fdt.begin_node("memory@acpi")?;
+    fdt.property_array_u64("reg", &[super::layout::DRAM_MEM_START, super::layout::SYSTEM_MEM_SIZE])?;
+    fdt.end_node(mem)?;
+
+    let mem_reg_prop = &[super::layout::DRAM_MEM_START + super::layout::SYSTEM_MEM_SIZE, mem_size];
+    let mem = fdt.begin_node("memory@ram")?;
     fdt.property_string("device_type", "memory")?;
     fdt.property_array_u64("reg", mem_reg_prop)?;
     fdt.end_node(mem)?;
@@ -255,6 +268,22 @@ fn create_chosen_node(
 
     fdt.end_node(chosen)?;
 
+    Ok(())
+}
+
+fn create_vmgenid_node(fdt: &mut FdtWriter, vmgenid: &Option<VmGenId>) -> Result<(), FdtError> {
+    if let Some(vmgenid_info) = vmgenid {
+        let compatible = "microsoft,vmgenid";
+
+        let vmgenid = fdt.begin_node("vmgenid")?;
+        fdt.property_string("compatible", compatible)?;
+        fdt.property_array_u64("reg", &[vmgenid_info.guest_address.0, 4096])?;
+        fdt.property_array_u32(
+            "interrupts",
+            &[GIC_FDT_IRQ_TYPE_SPI, vmgenid_info.gsi, IRQ_TYPE_EDGE_RISING],
+        )?;
+        fdt.end_node(vmgenid)?;
+    }
     Ok(())
 }
 

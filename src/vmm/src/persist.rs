@@ -26,7 +26,6 @@ use crate::cpu_config::templates::StaticCpuTemplate;
 use crate::cpu_config::x86_64::cpuid::common::get_vendor_id_from_host;
 #[cfg(target_arch = "x86_64")]
 use crate::cpu_config::x86_64::cpuid::CpuidTrait;
-#[cfg(target_arch = "x86_64")]
 use crate::device_manager::persist::ACPIDeviceManagerState;
 use crate::device_manager::persist::{DevicePersistError, DeviceStates};
 use crate::logger::{info, warn};
@@ -86,7 +85,6 @@ pub struct MicrovmState {
     /// Device states.
     pub device_states: DeviceStates,
     /// ACPI devices state.
-    #[cfg(target_arch = "x86_64")]
     pub acpi_dev_state: ACPIDeviceManagerState,
 }
 
@@ -719,7 +717,6 @@ mod tests {
             vm_state: vmm.vm.save_state(&mpidrs).unwrap(),
             #[cfg(target_arch = "x86_64")]
             vm_state: vmm.vm.save_state().unwrap(),
-            #[cfg(target_arch = "x86_64")]
             acpi_dev_state: vmm.acpi_device_manager.save(),
         };
 

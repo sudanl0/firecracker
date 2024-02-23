@@ -54,6 +54,12 @@ pub const DRAM_MEM_START: u64 = 0x8000_0000; // 2 GB.
 /// The maximum RAM size.
 pub const DRAM_MEM_MAX_SIZE: usize = 0x00FF_8000_0000; // 1024 - 2 = 1022G.
 
+/// Start of RAM on 64 bit ARM.
+pub const SYSTEM_MEM_START: u64 = DRAM_MEM_START;
+
+/// This is used by ACPI device manager for acpi tables or devices like vmgenid
+pub const SYSTEM_MEM_SIZE: u64 = 0x20_0000;
+
 /// Kernel command line maximum size.
 /// As per `arch/arm64/include/uapi/asm/setup.h`.
 pub const CMDLINE_MAX_SIZE: usize = 2048;
