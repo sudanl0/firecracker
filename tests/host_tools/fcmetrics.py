@@ -19,7 +19,7 @@ import pytest
 from framework.properties import global_props
 from host_tools.metrics import get_metrics_logger
 
-def create_metrics_schema_objects(metrics):
+def create_metrics_schema_objects(metrics, parent_key=''):
     """
     Helper functions to create jsonschema objects for
     Firecracker metrics.
@@ -29,28 +29,47 @@ def create_metrics_schema_objects(metrics):
         "required": [],
         "properties": {},
     }
+    required_keys = []
 
     if isinstance(metrics, dict):
         for sub_metrics_name, sub_metrics_fields in metrics.items():
-            obj = create_metrics_schema_objects(sub_metrics_fields)
+            new_key = f"{parent_key}{sub_metrics_name}."
+            obj, obj_keys = create_metrics_schema_objects(sub_metrics_fields, new_key)
             metrics_schema["properties"][sub_metrics_name] = obj
             metrics_schema["required"].append(sub_metrics_name)
-        return metrics_schema
+            required_keys.extend(obj_keys)
+            required_keys.append(new_key)
+        return metrics_schema, required_keys
 
     if isinstance(metrics, list):
         for metrics_field in metrics:
             if isinstance(metrics_field, str):
                 metrics_schema["properties"][metrics_field] = {"type": "number"}
                 metrics_schema["required"].append(metrics_field)
+                required_keys.append(f"{parent_key}{metrics_field}")
             elif isinstance(metrics_field, dict):
                 for sub_metrics_name, sub_metrics_fields in metrics_field.items():
-                    obj = create_metrics_schema_objects(sub_metrics_fields)
+                    new_key = f"{parent_key}{sub_metrics_name}."
+                    obj, obj_keys = create_metrics_schema_objects(sub_metrics_fields, new_key)
                     metrics_schema["properties"][sub_metrics_name] = obj
                     metrics_schema["required"].append(sub_metrics_name)
+                    required_keys.extend(obj_keys)
 
-        return metrics_schema
+        return metrics_schema, required_keys
 
     raise Exception("Invalid schema")
+
+def extract_all_nested_keys(obj, parent_key=''):
+    keys = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if parent_key:
+                key = f"{parent_key}.{key}"
+            if not isinstance(value, dict):
+                keys.append(key)
+            keys.extend(extract_all_nested_keys(value, key))
+
+    return keys
 
 def validate_fc_metrics(metrics):
     """
@@ -306,9 +325,12 @@ def validate_fc_metrics(metrics):
             ]
             vhost_user_devices.append(metrics_name)
 
-    firecracker_metrics_schema = create_metrics_schema_objects(firecracker_metrics)
+    firecracker_metrics_schema, keys_from_schema = create_metrics_schema_objects(firecracker_metrics)
 
     jsonschema.validate(instance=metrics, schema=firecracker_metrics_schema)
+
+    keys_from_metrics = extract_all_nested_keys(metrics)
+    assert set(keys_from_metrics) - set(keys_from_schema) == {'utc_timestamp_ms'}
 
     def validate_missing_metrics(metrics):
         # remove some metrics and confirm that fields and not just top level metrics
