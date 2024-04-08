@@ -197,7 +197,13 @@ def test_failing_filter(uvm_plain):
     )
 
     # Check the metrics
-    datapoints = test_microvm.get_all_metrics()
+    try:
+        datapoints = test_microvm.get_all_metrics()
+    except Exception as e:
+        time.sleep(5)
+        datapoints = test_microvm.get_all_metrics()
+        print(datapoints)
+        raise e
 
     num_faults = 0
     for datapoint in datapoints:
